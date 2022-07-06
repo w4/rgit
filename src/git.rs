@@ -7,7 +7,7 @@ use std::{
 };
 
 use arc_swap::ArcSwapOption;
-use git2::{Oid, Repository, Signature};
+use git2::{ObjectType, Oid, Repository, Signature};
 use moka::future::Cache;
 use time::OffsetDateTime;
 
@@ -57,6 +57,29 @@ impl Git {
                 .unwrap()
             })
             .await
+    }
+
+    pub async fn get_tag(&self, repo: PathBuf, tag_name: &str) -> DetailedTag {
+        let repo = Repository::open_bare(repo).unwrap();
+        let tag = repo
+            .find_reference(&format!("refs/tags/{tag_name}"))
+            .unwrap()
+            .peel_to_tag()
+            .unwrap();
+        let tag_target = tag.target().unwrap();
+
+        let tagged_object = match tag_target.kind() {
+            Some(ObjectType::Commit) => Some(TaggedObject::Commit(tag_target.id().to_string())),
+            Some(ObjectType::Tree) => Some(TaggedObject::Tree(tag_target.id().to_string())),
+            None | Some(_) => None,
+        };
+
+        DetailedTag {
+            name: tag_name.to_string(),
+            tagger: tag.tagger().map(Into::into),
+            message: tag.message().unwrap().to_string(),
+            tagged_object,
+        }
     }
 
     pub async fn get_refs(&self, repo: PathBuf) -> Arc<Refs> {
@@ -114,11 +137,12 @@ impl Git {
                             continue;
                         };
 
-                        let object = object.to_object(&repo)
-                            .unwrap();
+                        let object = object.to_object(&repo).unwrap();
                         let blob = object.into_blob().unwrap();
 
-                        return Some(Arc::from(String::from_utf8(blob.content().to_vec()).unwrap()));
+                        return Some(Arc::from(
+                            String::from_utf8(blob.content().to_vec()).unwrap(),
+                        ));
                     }
 
                     None
@@ -216,6 +240,20 @@ pub struct Branch {
 #[derive(Debug)]
 pub struct Remote {
     pub name: String,
+}
+
+#[derive(Debug)]
+pub enum TaggedObject {
+    Commit(String),
+    Tree(String),
+}
+
+#[derive(Debug)]
+pub struct DetailedTag {
+    pub name: String,
+    pub tagger: Option<CommitUser>,
+    pub message: String,
+    pub tagged_object: Option<TaggedObject>,
 }
 
 #[derive(Debug)]

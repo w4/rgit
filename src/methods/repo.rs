@@ -16,7 +16,7 @@ use path_clean::PathClean;
 use serde::Deserialize;
 use tower::{util::BoxCloneService, Service};
 
-use crate::git::Refs;
+use crate::git::{DetailedTag, Refs};
 use crate::{git::Commit, layers::UnwrapInfallible, Git};
 
 #[derive(Clone)]
@@ -58,6 +58,7 @@ pub async fn service<ReqBody: Send + 'static>(mut request: Request<ReqBody>) -> 
         Some("commit") => BoxCloneService::new(handle_commit.into_service()),
         Some("diff") => BoxCloneService::new(handle_diff.into_service()),
         Some("stats") => BoxCloneService::new(handle_stats.into_service()),
+        Some("tag") => BoxCloneService::new(handle_tag.into_service()),
         Some(v) => {
             uri_parts.push(v);
             BoxCloneService::new(handle_summary.into_service())
@@ -87,6 +88,30 @@ pub async fn handle_summary(Extension(repo): Extension<Repository>) -> Html<Stri
     }
 
     Html(View { repo }.render().unwrap())
+}
+
+#[derive(Deserialize)]
+pub struct TagQuery {
+    #[serde(rename = "h")]
+    name: String,
+}
+
+pub async fn handle_tag(
+    Extension(repo): Extension<Repository>,
+    Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
+    Extension(git): Extension<Git>,
+    Query(query): Query<TagQuery>,
+) -> Html<String> {
+    #[derive(Template)]
+    #[template(path = "repo/tag.html")]
+    pub struct View {
+        repo: Repository,
+        tag: DetailedTag,
+    }
+
+    let tag = git.get_tag(repository_path, &query.name).await;
+
+    Html(View { repo, tag }.render().unwrap())
 }
 
 #[derive(Deserialize)]

@@ -1,0 +1,37 @@
+{% extends "repo/base.html" %}
+
+{% block content %}
+<table class="commit-info">
+    <tbody>
+    <tr>
+        <th>tag name</th>
+        <td>{{ tag.name }}</td>
+    </tr>
+    {% if let Some(tagger) = tag.tagger %}
+        <tr>
+            <th>tag date</th>
+            <td>{{ tagger.time() }}</td>
+        </tr>
+        <tr>
+            <th>tagged by</th>
+            <td>{{ tagger.name() }} &lt;{{ tagger.email() }}&gt;</td>
+        </tr>
+    {% endif %}
+    {% if let Some(tagged_object) = tag.tagged_object %}
+        <tr>
+            <th>tagged object</th>
+            <td>
+                {% match tagged_object %}
+                    {% when crate::git::TaggedObject::Commit with (commit) %}
+                        <a href="/{{ repo.display() }}/commit?id={{ commit }}">commit {{ commit.as_str()[0..10] }}...</a>
+                    {% when crate::git::TaggedObject::Tree with (tree) %}
+                        tree {{ tree }}
+                {% endmatch %}
+            </td>
+        </tr>
+    {% endif %}
+    </tbody>
+</table>
+
+<pre class="h2-first-line">{{ tag.message }}</pre>
+{% endblock %}

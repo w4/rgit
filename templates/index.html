@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Index{% endblock %}
+
+{% block content %}
+    <table class="repositories">
+        <thead>
+        <tr>
+            <th>Name</th>
+            <th>Description</th>
+            <th>Owner</th>
+            <th>Idle</th>
+        </tr>
+        </thead>
+
+        <tbody>
+        {% for (path, repositories) in repositories %}
+            {% if let Some(path) = path %}
+                <tr><td class="repo-section" colspan="4">{{ path }}</td></tr>
+            {% endif %}
+
+            {%for repository in repositories %}
+                <tr class="{% if path.is_some() %}has-parent{% endif %}">
+                    <td>
+                        <a href="/{% if let Some(path) = path %}{{ path }}/{% endif %}{{ repository.name }}">
+                            {{ repository.name }}
+                        </a>
+                    </td>
+                    <td>
+                        <a href="/{% if let Some(path) = path %}{{ path }}/{% endif %}{{ repository.name }}">
+                            {% if let Some(description) = repository.description %}
+                                {{ description }}
+                            {% else %}
+                                Unnamed repository; edit this file 'description' to name the repository.
+                            {% endif %}
+                        </a>
+                    </td>
+                    <td>
+                        <a href="/{% if let Some(path) = path %}{{ path }}/{% endif %}{{ repository.name }}">
+                            {% if let Some(owner) = repository.owner %}
+                                {{ owner }}
+                            {% endif %}
+                        </a>
+                    </td>
+                    <td>
+                        <a href="/{% if let Some(path) = path %}{{ path }}/{% endif %}{{ repository.name }}">
+                            {{ humantime::format_duration(repository.last_modified.clone()) }}
+                        </a>
+                    </td>
+                </tr>
+            {% endfor %}
+        {% endfor %}
+        </tbody>
+    </table>
+{% endblock %}

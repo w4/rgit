@@ -1,0 +1,70 @@
+body {
+    font-family: sans-serif;
+    font-size: 10pt;
+}
+
+main {
+    padding: 2rem;
+    margin: 0;
+    border-bottom: solid 3px #ccc;
+}
+
+header {
+    border-bottom: solid 1px #ccc;
+}
+
+footer {
+    margin-top: 0.5em;
+    text-align: center;
+    font-size: 80%;
+    color: #ccc;
+}
+
+a {
+    text-decoration: none;
+    color: blue;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+table { border-collapse: collapse; }
+table.repositories { width: 100%; }
+table.repositories a { color: black; }
+table.repositories a:hover { color: #00f; }
+table th { text-align: left; }
+.repo-section { font-style: italic; color: #888; }
+
+table.repositories tbody tr:nth-child(odd) {
+    background: #f7f7f7;
+}
+
+table tbody tr.has-parent td:first-of-type {
+    padding-left: 1rem;
+}
+
+table pre { margin: 0; }
+
+table.commit-info td, table.commit-info th { padding: 0.1em 1em 0.1em 0.1em; }
+
+nav {
+    margin-top: 2rem;
+    border-bottom: solid 3px #ccc;
+}
+
+nav a {
+    padding: 2px 0.75em;
+    color: #777;
+    font-size: 110%;
+    text-decoration: none;
+}
+
+nav a:hover {
+    text-decoration: underline;
+}
+
+nav a.active {
+    color: #000;
+    background-color: #ccc;
+}

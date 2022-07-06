@@ -1,0 +1,38 @@
+{% extends "repo/base.html" %}
+
+{% block commit_nav_class %}active{% endblock %}
+
+{% block content %}
+<table class="commit-info">
+    <tbody>
+    <tr>
+        <th>author</th>
+        <td>{{ commit.author().name() }} &lt;{{ commit.author().email() }}&gt;</td>
+        <td>{{ commit.author().time() }}</td>
+    </tr>
+    <tr>
+        <th>committer</th>
+        <td>{{ commit.committer().name() }} &lt;{{ commit.committer().email() }}&gt;</td>
+        <td>{{ commit.committer().time() }}</td>
+    </tr>
+    <tr>
+        <th>commit</th>
+        <td colspan="2"><pre>{{ commit.oid() }}</pre></td>
+    </tr>
+    <tr>
+        <th>tree</th>
+        <td colspan="2"><pre>{{ commit.tree() }}</pre></td>
+    </tr>
+    {% for parent in commit.parents() %}
+    <tr>
+        <th>parent</th>
+        <td colspan="2"><pre>{{ parent }}</pre></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+<h2>{{ commit.summary() }}</h2>
+<pre>{{ commit.body() }}</pre>
+
+{% endblock %}

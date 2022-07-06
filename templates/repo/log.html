@@ -15,7 +15,11 @@
     <tbody>
     {% for commit in commits %}
     <tr>
-        <td>{{ commit.committer().time() }}</td>
+        <td>
+            <time datetime="{{ commit.committer().time() }}" title="{{ commit.committer().time() }}">
+                {{ commit.committer().time()|timeago }}
+            </time>
+        </td>
         <td><a href="/{{ repo.display() }}/commit/?id={{ commit.oid() }}">{{ commit.summary() }}</a></td>
         <td>
             <img src="https://www.gravatar.com/avatar/{{ commit.author().email_md5() }}?s=13&d=retro" width="13" height="13">

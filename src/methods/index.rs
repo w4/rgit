@@ -3,6 +3,7 @@ use axum::response::Html;
 use axum::Extension;
 use std::sync::Arc;
 
+use super::filters;
 use crate::{git::RepositoryMetadataList, Git};
 
 #[allow(clippy::unused_async)]

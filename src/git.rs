@@ -267,7 +267,7 @@ pub struct RepositoryMetadata {
     pub name: String,
     pub description: Option<Cow<'static, str>>,
     pub owner: Option<String>,
-    pub last_modified: Duration,
+    pub last_modified: OffsetDateTime,
 }
 
 #[derive(Debug)]
@@ -275,7 +275,7 @@ pub struct CommitUser {
     name: String,
     email: String,
     email_md5: String,
-    time: String,
+    time: OffsetDateTime,
 }
 
 impl From<Signature<'_>> for CommitUser {
@@ -285,8 +285,7 @@ impl From<Signature<'_>> for CommitUser {
             email: v.email().unwrap().to_string(),
             email_md5: format!("{:x}", md5::compute(v.email_bytes())),
             time: OffsetDateTime::from_unix_timestamp(v.when().seconds())
-                .unwrap()
-                .to_string(),
+                .unwrap(),
         }
     }
 }
@@ -304,8 +303,8 @@ impl CommitUser {
         &self.email_md5
     }
 
-    pub fn time(&self) -> &str {
-        &self.time
+    pub fn time(&self) -> OffsetDateTime {
+        self.time
     }
 }
 
@@ -409,8 +408,7 @@ fn fetch_repository_metadata_impl(
                 .into_owned(),
             description,
             owner,
-            last_modified: (OffsetDateTime::now_utc() - OffsetDateTime::from(last_modified))
-                .unsigned_abs(),
+            last_modified: OffsetDateTime::from(last_modified),
         });
     }
 }

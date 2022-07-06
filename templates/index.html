@@ -44,7 +44,9 @@
                     </td>
                     <td>
                         <a href="/{% if let Some(path) = path %}{{ path }}/{% endif %}{{ repository.name }}">
-                            {{ humantime::format_duration(repository.last_modified.clone()) }}
+                            <time datetime="{{ repository.last_modified }}" title="{{ repository.last_modified }}">
+                                {{ repository.last_modified.clone()|timeago }}
+                            </time>
                         </a>
                     </td>
                 </tr>

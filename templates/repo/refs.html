@@ -22,7 +22,11 @@
             <img src="https://www.gravatar.com/avatar/{{ branch.commit.author().email_md5() }}?s=13&d=retro" width="13" height="13">
             {{ branch.commit.author().name() }}
         </td>
-        <td>{{ branch.commit.author().time() }}</td>
+        <td>
+            <time datetime="{{ branch.commit.author().time() }}" title="{{ branch.commit.author().time() }}">
+                {{ branch.commit.author().time()|timeago }}
+            </time>
+        </td>
     </tr>
     {% endfor %}
     </tbody>
@@ -54,7 +58,9 @@
         </td>
         <td>
             {% if let Some(tagger) = tag.tagger %}
-                {{ tagger.time() }}
+                <time datetime="{{ tagger.time() }}" title="{{ tagger.time() }}">
+                    {{ tagger.time()|timeago }}
+                </time>
             {% endif %}
         </td>
     </tr>

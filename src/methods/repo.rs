@@ -16,6 +16,7 @@ use path_clean::PathClean;
 use serde::Deserialize;
 use tower::{util::BoxCloneService, Service};
 
+use super::filters;
 use crate::git::{DetailedTag, Refs};
 use crate::{git::Commit, layers::UnwrapInfallible, Git};
 

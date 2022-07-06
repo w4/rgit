@@ -23,7 +23,7 @@
             <td>
                 {% match tagged_object %}
                     {% when crate::git::TaggedObject::Commit with (commit) %}
-                        <a href="/{{ repo.display() }}/commit?id={{ commit }}">commit {{ commit.as_str()[0..10] }}...</a>
+                        <a href="/{{ repo.display() }}/commit?id={{ commit }}">commit {{ commit|truncate(10) }}...</a>
                     {% when crate::git::TaggedObject::Tree with (tree) %}
                         tree {{ tree }}
                 {% endmatch %}

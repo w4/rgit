@@ -3,5 +3,9 @@
 {% block about_nav_class %}active{% endblock %}
 
 {% block content %}
-<pre>{{ readme }}</pre>
+{% if let Some(readme) = readme %}
+    <pre>{{ readme }}</pre>
+{% else %}
+    No README in repository HEAD.
+{% endif %}
 {% endblock %}

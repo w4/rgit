@@ -16,7 +16,7 @@ pub type RepositoryMetadataList = BTreeMap<Option<String>, Vec<RepositoryMetadat
 #[derive(Clone)]
 pub struct Git {
     commits: Cache<Oid, Arc<Commit>>,
-    readme_cache: Cache<PathBuf, Arc<str>>,
+    readme_cache: Cache<PathBuf, Option<Arc<str>>>,
     refs: Cache<PathBuf, Arc<Refs>>,
     repository_metadata: Arc<ArcSwapOption<RepositoryMetadataList>>,
 }
@@ -96,7 +96,9 @@ impl Git {
             .await
     }
 
-    pub async fn get_readme(&self, repo: PathBuf) -> Arc<str> {
+    pub async fn get_readme(&self, repo: PathBuf) -> Option<Arc<str>> {
+        const README_FILES: &[&str] = &["README.md", "README", "README.txt"];
+
         self.readme_cache
             .get_with(repo.clone(), async {
                 tokio::task::spawn_blocking(move || {
@@ -105,14 +107,21 @@ impl Git {
                     let commit = head.peel_to_commit().unwrap();
                     let tree = commit.tree().unwrap();
 
-                    let object = tree
-                        .get_name("README.md")
-                        .unwrap()
-                        .to_object(&repo)
-                        .unwrap();
-                    let blob = object.into_blob().unwrap();
+                    for file in README_FILES {
+                        let object = if let Some(o) = tree.get_name(file) {
+                            o
+                        } else {
+                            continue;
+                        };
 
-                    Arc::from(String::from_utf8(blob.content().to_vec()).unwrap())
+                        let object = object.to_object(&repo)
+                            .unwrap();
+                        let blob = object.into_blob().unwrap();
+
+                        return Some(Arc::from(String::from_utf8(blob.content().to_vec()).unwrap()));
+                    }
+
+                    None
                 })
                 .await
                 .unwrap()

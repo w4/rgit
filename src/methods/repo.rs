@@ -161,7 +161,7 @@ pub async fn handle_about(
     #[template(path = "repo/about.html")]
     pub struct View {
         repo: Repository,
-        readme: Arc<str>,
+        readme: Option<Arc<str>>,
     }
 
     let readme = git.get_readme(repository_path).await;

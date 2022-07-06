@@ -3,4 +3,26 @@
 {% block log_nav_class %}active{% endblock %}
 
 {% block content %}
+<table class="repositories">
+    <thead>
+    <tr>
+        <th>Age</th>
+        <th>Commit message</th>
+        <th>Author</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    {% for commit in commits %}
+    <tr>
+        <td>{{ commit.committer().time() }}</td>
+        <td><a href="/{{ repo.display() }}/commit/?id={{ commit.oid() }}">{{ commit.summary() }}</a></td>
+        <td>
+            <img src="https://www.gravatar.com/avatar/{{ commit.author().email_md5() }}?s=13&d=retro" width="13" height="13">
+            {{ commit.author().name() }}
+        </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
 {% endblock %}

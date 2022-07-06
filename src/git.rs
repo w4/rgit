@@ -7,7 +7,7 @@ use std::{
 };
 
 use arc_swap::ArcSwapOption;
-use git2::{Oid, Repository, Signature};
+use git2::{Oid, Repository, Signature, Sort};
 use time::OffsetDateTime;
 
 pub type RepositoryMetadataList = BTreeMap<Option<String>, Vec<RepositoryMetadata>>;
@@ -52,38 +52,38 @@ impl Git {
     pub async fn get_refs<'a>(&'a self, repo: PathBuf) -> Arc<Refs> {
         self.refs
             .get_with(repo.clone(), async {
-            tokio::task::spawn_blocking(move || {
-                let repo = git2::Repository::open_bare(repo).unwrap();
-                let refs = repo.references().unwrap();
+                tokio::task::spawn_blocking(move || {
+                    let repo = git2::Repository::open_bare(repo).unwrap();
+                    let refs = repo.references().unwrap();
 
-                let mut built_refs = Refs::default();
+                    let mut built_refs = Refs::default();
 
-                for ref_ in refs {
-                    let ref_ = ref_.unwrap();
+                    for ref_ in refs {
+                        let ref_ = ref_.unwrap();
 
-                    if ref_.is_branch() {
-                        let commit = ref_.peel_to_commit().unwrap();
+                        if ref_.is_branch() {
+                            let commit = ref_.peel_to_commit().unwrap();
 
-                        built_refs.branch.push(Branch {
-                            name: ref_.shorthand().unwrap().to_string(),
-                            commit: commit.into(),
-                        });
-                    } else if ref_.is_tag() {
-                        let commit = ref_.peel_to_commit().unwrap();
+                            built_refs.branch.push(Branch {
+                                name: ref_.shorthand().unwrap().to_string(),
+                                commit: commit.into(),
+                            });
+                        } else if ref_.is_tag() {
+                            let commit = ref_.peel_to_commit().unwrap();
 
-                        built_refs.tag.push(Tag {
-                            name: ref_.shorthand().unwrap().to_string(),
-                            commit: commit.into(),
-                        });
+                            built_refs.tag.push(Tag {
+                                name: ref_.shorthand().unwrap().to_string(),
+                                commit: commit.into(),
+                            });
+                        }
                     }
-                }
 
-                Arc::new(built_refs)
+                    Arc::new(built_refs)
+                })
+                .await
+                .unwrap()
             })
             .await
-            .unwrap()
-        })
-        .await
     }
 
     pub async fn get_readme(&self, repo: PathBuf) -> Arc<str> {
@@ -95,7 +95,11 @@ impl Git {
                     let commit = head.peel_to_commit().unwrap();
                     let tree = commit.tree().unwrap();
 
-                    let object = tree.get_name("README.md").unwrap().to_object(&repo).unwrap();
+                    let object = tree
+                        .get_name("README.md")
+                        .unwrap()
+                        .to_object(&repo)
+                        .unwrap();
                     let blob = object.into_blob().unwrap();
 
                     Arc::from(String::from_utf8(blob.content().to_vec()).unwrap())
@@ -137,6 +141,27 @@ impl Git {
         self.repository_metadata.store(Some(repos.clone()));
 
         repos
+    }
+
+    pub async fn get_commits(&self, repo: PathBuf) -> Vec<Commit> {
+        tokio::task::spawn_blocking(move || {
+            let repo = Repository::open_bare(repo).unwrap();
+            let mut revs = repo.revwalk().unwrap();
+            revs.set_sorting(Sort::TIME).unwrap();
+            revs.push_head().unwrap();
+
+            let mut commits = Vec::with_capacity(200);
+
+            for rev in revs.skip(0).take(200) {
+                let rev = rev.unwrap();
+                let commit = repo.find_commit(rev).unwrap();
+                commits.push(commit.into());
+            }
+
+            commits
+        })
+        .await
+        .unwrap()
     }
 }
 

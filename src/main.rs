@@ -1,14 +1,12 @@
 #![deny(clippy::pedantic)]
 
 use axum::{
-    body::Body, handler::Handler, http::HeaderValue, response::Response, routing::get, Router,
+    body::Body, handler::Handler, http::HeaderValue, response::Response, routing::get, Extension,
+    Router,
 };
 use tower_layer::layer_fn;
 
-use crate::{
-    git::{fetch_repository_metadata, get_latest_commit},
-    layers::logger::LoggingMiddleware,
-};
+use crate::{git::Git, layers::logger::LoggingMiddleware};
 
 mod git;
 mod layers;
@@ -30,7 +28,8 @@ async fn main() {
             get(static_css(include_bytes!("../statics/style.css"))),
         )
         .fallback(methods::repo::service.into_service())
-        .layer(layer_fn(LoggingMiddleware));
+        .layer(layer_fn(LoggingMiddleware))
+        .layer(Extension(Git::default()));
 
     axum::Server::bind(&"127.0.0.1:3333".parse().unwrap())
         .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())

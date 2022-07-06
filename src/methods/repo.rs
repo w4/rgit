@@ -1,11 +1,12 @@
 use std::{
     ops::Deref,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use askama::Template;
-use axum::extract::Query;
 use axum::{
+    extract::Query,
     handler::Handler,
     http::Request,
     response::{Html, IntoResponse, Response},
@@ -15,8 +16,7 @@ use path_clean::PathClean;
 use serde::Deserialize;
 use tower::{util::BoxCloneService, Service};
 
-use crate::git::get_commit;
-use crate::{get_latest_commit, git::Commit, layers::UnwrapInfallible};
+use crate::{git::Commit, layers::UnwrapInfallible, Git};
 
 #[derive(Clone)]
 pub struct Repository(pub PathBuf);
@@ -130,22 +130,23 @@ pub struct CommitQuery {
 pub async fn handle_commit(
     Extension(repo): Extension<Repository>,
     Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
+    Extension(git): Extension<Git>,
     Query(query): Query<CommitQuery>,
 ) -> Html<String> {
     #[derive(Template)]
     #[template(path = "repo/commit.html")]
     pub struct View {
         pub repo: Repository,
-        pub commit: Commit,
+        pub commit: Arc<Commit>,
     }
 
     Html(
         View {
             repo,
             commit: if let Some(commit) = query.id {
-                get_commit(&repository_path, &commit)
+                git.get_commit(repository_path, &commit).await
             } else {
-                get_latest_commit(&repository_path)
+                Arc::new(git.get_latest_commit(repository_path).await)
             },
         }
         .render()

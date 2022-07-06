@@ -1,10 +1,83 @@
-use std::{borrow::Cow, collections::BTreeMap, fmt::Display, path::Path, time::Duration};
+use std::{
+    borrow::Cow,
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
+use arc_swap::ArcSwapOption;
 use git2::{Oid, Repository, Signature};
-use owning_ref::OwningHandle;
 use time::OffsetDateTime;
 
 pub type RepositoryMetadataList = BTreeMap<Option<String>, Vec<RepositoryMetadata>>;
+
+#[derive(Clone)]
+pub struct Git {
+    commits: moka::future::Cache<String, Arc<Commit>>,
+    repository_metadata: Arc<ArcSwapOption<RepositoryMetadataList>>,
+}
+
+impl Default for Git {
+    fn default() -> Self {
+        Self {
+            commits: moka::future::Cache::new(100),
+            repository_metadata: Arc::new(ArcSwapOption::default()),
+        }
+    }
+}
+
+impl Git {
+    pub async fn get_commit<'a>(&'a self, repo: PathBuf, commit: &str) -> Arc<Commit> {
+        let commit = Oid::from_str(commit).unwrap();
+
+        self.commits
+            .get_with(commit.to_string(), async {
+                tokio::task::spawn_blocking(move || {
+                    let repo = Repository::open_bare(repo).unwrap();
+                    let commit = repo.find_commit(commit).unwrap();
+
+                    Arc::new(Commit::from(commit))
+                })
+                .await
+                .unwrap()
+            })
+            .await
+    }
+
+    pub async fn get_latest_commit<'a>(&'a self, repo: PathBuf) -> Commit {
+        tokio::task::spawn_blocking(move || {
+            let repo = Repository::open_bare(repo).unwrap();
+            let head = repo.head().unwrap();
+            let commit = head.peel_to_commit().unwrap();
+
+            Commit::from(commit)
+        })
+        .await
+        .unwrap()
+    }
+
+    pub async fn fetch_repository_metadata(&self) -> Arc<RepositoryMetadataList> {
+        if let Some(metadata) = self.repository_metadata.load().as_ref() {
+            return Arc::clone(&metadata);
+        }
+
+        let start = Path::new("../test-git").canonicalize().unwrap();
+
+        let repos = tokio::task::spawn_blocking(move || {
+            let mut repos: RepositoryMetadataList = RepositoryMetadataList::new();
+            fetch_repository_metadata_impl(&start, &start, &mut repos);
+            repos
+        })
+        .await
+        .unwrap();
+
+        let repos = Arc::new(repos);
+        self.repository_metadata.store(Some(repos.clone()));
+
+        repos
+    }
+}
 
 #[derive(Debug)]
 pub struct RepositoryMetadata {
@@ -14,85 +87,90 @@ pub struct RepositoryMetadata {
     pub last_modified: Duration,
 }
 
-pub struct CommitUser<'a>(Signature<'a>);
+pub struct CommitUser {
+    name: String,
+    email: String,
+    time: String,
+}
 
-impl CommitUser<'_> {
+impl From<Signature<'_>> for CommitUser {
+    fn from(v: Signature<'_>) -> Self {
+        CommitUser {
+            name: v.name().unwrap().to_string(),
+            email: v.email().unwrap().to_string(),
+            time: OffsetDateTime::from_unix_timestamp(v.when().seconds())
+                .unwrap()
+                .to_string(),
+        }
+    }
+}
+
+impl CommitUser {
     pub fn name(&self) -> &str {
-        self.0.name().unwrap()
+        &self.name
     }
 
     pub fn email(&self) -> &str {
-        self.0.email().unwrap()
+        &self.email
     }
 
-    pub fn time(&self) -> String {
-        OffsetDateTime::from_unix_timestamp(self.0.when().seconds())
-            .unwrap()
-            .to_string()
+    pub fn time(&self) -> &str {
+        &self.time
     }
 }
 
-pub struct Commit(OwningHandle<Box<Repository>, Box<git2::Commit<'static>>>);
+pub struct Commit {
+    author: CommitUser,
+    committer: CommitUser,
+    oid: String,
+    tree: String,
+    parents: Vec<String>,
+    summary: String,
+    body: String,
+}
+
+impl From<git2::Commit<'_>> for Commit {
+    fn from(commit: git2::Commit<'_>) -> Self {
+        Commit {
+            author: commit.author().into(),
+            committer: commit.committer().into(),
+            oid: commit.id().to_string(),
+            tree: commit.tree_id().to_string(),
+            parents: commit.parent_ids().map(|v| v.to_string()).collect(),
+            summary: commit.summary().unwrap().to_string(),
+            body: commit.body().map(ToString::to_string).unwrap_or_default(),
+        }
+    }
+}
 
 impl Commit {
-    pub fn author(&self) -> CommitUser<'_> {
-        CommitUser(self.0.author())
+    pub fn author(&self) -> &CommitUser {
+        &self.author
     }
 
-    pub fn committer(&self) -> CommitUser<'_> {
-        CommitUser(self.0.committer())
+    pub fn committer(&self) -> &CommitUser {
+        &self.committer
     }
 
-    pub fn oid(&self) -> impl Display {
-        self.0.id()
+    pub fn oid(&self) -> &str {
+        &self.oid
     }
 
-    pub fn tree(&self) -> impl Display {
-        self.0.tree_id()
+    pub fn tree(&self) -> &str {
+        &self.tree
     }
 
-    pub fn parents(&self) -> impl Iterator<Item = impl Display + '_> {
-        self.0.parent_ids()
+    pub fn parents(&self) -> impl Iterator<Item = &str> {
+        self.parents.iter().map(String::as_str)
     }
 
     pub fn summary(&self) -> &str {
-        self.0.summary().unwrap()
+        &self.summary
     }
 
     pub fn body(&self) -> &str {
-        self.0.message().unwrap()
+        &self.body
     }
-}
-
-pub fn get_commit(path: &Path, commit: &str) -> Commit {
-    let repo = Repository::open_bare(path).unwrap();
-
-    let commit = OwningHandle::new_with_fn(Box::new(repo), |v| {
-        Box::new(unsafe { (*v).find_commit(Oid::from_str(commit).unwrap()).unwrap() })
-    });
-
-    // TODO: we can cache this
-    Commit(commit)
-}
-
-pub fn get_latest_commit(path: &Path) -> Commit {
-    let repo = Repository::open_bare(path).unwrap();
-
-    let commit = OwningHandle::new_with_fn(Box::new(repo), |v| {
-        let head = unsafe { (*v).head().unwrap() };
-        Box::new(head.peel_to_commit().unwrap())
-    });
-
-    // TODO: we can cache this
-    Commit(commit)
-}
-
-pub fn fetch_repository_metadata() -> RepositoryMetadataList {
-    let start = Path::new("../test-git").canonicalize().unwrap();
-
-    let mut repos: RepositoryMetadataList = RepositoryMetadataList::new();
-    fetch_repository_metadata_impl(&start, &start, &mut repos);
-    repos
 }
 
 fn fetch_repository_metadata_impl(

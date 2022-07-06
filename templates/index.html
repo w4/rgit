@@ -14,7 +14,7 @@
         </thead>
 
         <tbody>
-        {% for (path, repositories) in repositories %}
+        {% for (path, repositories) in repositories.iter() %}
             {% if let Some(path) = path %}
                 <tr><td class="repo-section" colspan="4">{{ path }}</td></tr>
             {% endif %}

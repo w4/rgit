@@ -4,6 +4,7 @@ use std::{
 };
 
 use askama::Template;
+use axum::extract::Query;
 use axum::{
     handler::Handler,
     http::Request,
@@ -11,8 +12,10 @@ use axum::{
     Extension,
 };
 use path_clean::PathClean;
+use serde::Deserialize;
 use tower::{util::BoxCloneService, Service};
 
+use crate::git::get_commit;
 use crate::{get_latest_commit, git::Commit, layers::UnwrapInfallible};
 
 #[derive(Clone)]
@@ -118,10 +121,16 @@ pub async fn handle_about(Extension(repo): Extension<Repository>) -> Html<String
     Html(View { repo }.render().unwrap())
 }
 
+#[derive(Deserialize)]
+pub struct CommitQuery {
+    id: Option<String>,
+}
+
 #[allow(clippy::unused_async)]
 pub async fn handle_commit(
     Extension(repo): Extension<Repository>,
     Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
+    Query(query): Query<CommitQuery>,
 ) -> Html<String> {
     #[derive(Template)]
     #[template(path = "repo/commit.html")]
@@ -133,7 +142,11 @@ pub async fn handle_commit(
     Html(
         View {
             repo,
-            commit: get_latest_commit(&repository_path),
+            commit: if let Some(commit) = query.id {
+                get_commit(&repository_path, &commit)
+            } else {
+                get_latest_commit(&repository_path)
+            },
         }
         .render()
         .unwrap(),

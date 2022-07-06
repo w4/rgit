@@ -1,6 +1,6 @@
 use std::{borrow::Cow, collections::BTreeMap, fmt::Display, path::Path, time::Duration};
 
-use git2::{Repository, Signature};
+use git2::{Oid, Repository, Signature};
 use owning_ref::OwningHandle;
 use time::OffsetDateTime;
 
@@ -62,6 +62,17 @@ impl Commit {
     pub fn body(&self) -> &str {
         self.0.message().unwrap()
     }
+}
+
+pub fn get_commit(path: &Path, commit: &str) -> Commit {
+    let repo = Repository::open_bare(path).unwrap();
+
+    let commit = OwningHandle::new_with_fn(Box::new(repo), |v| {
+        Box::new(unsafe { (*v).find_commit(Oid::from_str(commit).unwrap()).unwrap() })
+    });
+
+    // TODO: we can cache this
+    Commit(commit)
 }
 
 pub fn get_latest_commit(path: &Path) -> Commit {

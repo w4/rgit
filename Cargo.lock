@@ -754,6 +754,7 @@ dependencies = [
  "humantime",
  "owning_ref",
  "path-clean",
+ "serde",
  "time",
  "tokio",
  "tower",

@@ -33,6 +33,10 @@ a:hover {
     margin-top: 2rem;
 }
 
+.no-hover:hover {
+    text-decoration: none;
+}
+
 table { border-collapse: collapse; }
 table.repositories { width: 100%; }
 table.repositories a { color: black; }

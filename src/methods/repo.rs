@@ -242,14 +242,32 @@ pub async fn handle_tree(Extension(repo): Extension<Repository>) -> Html<String>
 }
 
 #[allow(clippy::unused_async)]
-pub async fn handle_diff(Extension(repo): Extension<Repository>) -> Html<String> {
+pub async fn handle_diff(
+    Extension(repo): Extension<Repository>,
+    Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
+    Extension(git): Extension<Git>,
+    Extension(syntax_set): Extension<Arc<SyntaxSet>>,
+    Query(query): Query<CommitQuery>,
+) -> Html<String> {
     #[derive(Template)]
     #[template(path = "repo/diff.html")]
     pub struct View {
         pub repo: Repository,
+        pub commit: Arc<Commit>,
     }
 
-    Html(View { repo }.render().unwrap())
+    Html(
+        View {
+            repo,
+            commit: if let Some(commit) = query.id {
+                git.get_commit(repository_path, &commit, syntax_set).await
+            } else {
+                Arc::new(git.get_latest_commit(repository_path, syntax_set).await)
+            },
+        }
+        .render()
+        .unwrap(),
+    )
 }
 
 #[allow(clippy::unused_async)]

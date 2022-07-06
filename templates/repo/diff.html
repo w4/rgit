@@ -1,6 +1,13 @@
 {% extends "repo/base.html" %}
 
+{% block head %}
+<link rel="stylesheet" type="text/css" href="/highlight.css" />
+{% endblock %}
+
 {% block diff_nav_class %}active{% endblock %}
 
 {% block content %}
+<h2>Diff</h2>
+<pre>{{ commit.diff_stats|safe }}
+{{ commit.diff|safe }}</pre>
 {% endblock %}

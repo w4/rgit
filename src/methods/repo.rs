@@ -93,6 +93,8 @@ pub async fn handle_summary(Extension(repo): Extension<Repository>) -> Html<Stri
 pub struct LogQuery {
     #[serde(rename = "ofs")]
     offset: Option<usize>,
+    #[serde(rename = "h")]
+    branch: Option<String>,
 }
 
 #[allow(clippy::unused_async)]
@@ -108,10 +110,15 @@ pub async fn handle_log(
         repo: Repository,
         commits: Vec<Commit>,
         next_offset: Option<usize>,
+        branch: Option<String>,
     }
 
     let (commits, next_offset) = git
-        .get_commits(repository_path, query.offset.unwrap_or(0))
+        .get_commits(
+            repository_path,
+            query.branch.as_deref(),
+            query.offset.unwrap_or(0),
+        )
         .await;
 
     Html(
@@ -119,6 +126,7 @@ pub async fn handle_log(
             repo,
             commits,
             next_offset,
+            branch: query.branch,
         }
         .render()
         .unwrap(),

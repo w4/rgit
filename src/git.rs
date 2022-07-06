@@ -7,7 +7,7 @@ use std::{
 };
 
 use arc_swap::ArcSwapOption;
-use git2::{ObjectType, Oid, Repository, Signature};
+use git2::{Oid, Repository, Signature};
 use moka::future::Cache;
 use time::OffsetDateTime;
 
@@ -59,16 +59,16 @@ impl Git {
             .await
     }
 
-    pub async fn get_refs<'a>(&'a self, repo: PathBuf) -> Arc<Refs> {
+    pub async fn get_refs(&self, repo: PathBuf) -> Arc<Refs> {
         self.refs
             .get_with(repo.clone(), async {
                 tokio::task::spawn_blocking(move || {
                     let repo = git2::Repository::open_bare(repo).unwrap();
-                    let refs = repo.references().unwrap();
+                    let ref_iter = repo.references().unwrap();
 
                     let mut built_refs = Refs::default();
 
-                    for ref_ in refs {
+                    for ref_ in ref_iter {
                         let ref_ = ref_.unwrap();
 
                         if ref_.is_branch() {
@@ -120,7 +120,7 @@ impl Git {
             .await
     }
 
-    pub async fn get_latest_commit<'a>(&'a self, repo: PathBuf) -> Commit {
+    pub async fn get_latest_commit(&self, repo: PathBuf) -> Commit {
         tokio::task::spawn_blocking(move || {
             let repo = Repository::open_bare(repo).unwrap();
             let head = repo.head().unwrap();
@@ -134,7 +134,7 @@ impl Git {
 
     pub async fn fetch_repository_metadata(&self) -> Arc<RepositoryMetadataList> {
         if let Some(metadata) = self.repository_metadata.load().as_ref() {
-            return Arc::clone(&metadata);
+            return Arc::clone(metadata);
         }
 
         let start = Path::new("../test-git").canonicalize().unwrap();
@@ -153,13 +153,25 @@ impl Git {
         repos
     }
 
-    pub async fn get_commits(&self, repo: PathBuf, offset: usize) -> (Vec<Commit>, Option<usize>) {
+    pub async fn get_commits(
+        &self,
+        repo: PathBuf,
+        branch: Option<&str>,
+        offset: usize,
+    ) -> (Vec<Commit>, Option<usize>) {
         const AMOUNT: usize = 200;
+
+        let ref_name = branch.map(|branch| format!("refs/heads/{}", branch));
 
         tokio::task::spawn_blocking(move || {
             let repo = Repository::open_bare(repo).unwrap();
             let mut revs = repo.revwalk().unwrap();
-            revs.push_head().unwrap();
+
+            if let Some(ref_name) = ref_name.as_deref() {
+                revs.push_ref(ref_name).unwrap();
+            } else {
+                revs.push_head().unwrap();
+            }
 
             let mut commits: Vec<Commit> = revs
                 .skip(offset)

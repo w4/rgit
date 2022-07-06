@@ -28,7 +28,11 @@
 
 {% if let Some(next_offset) = next_offset %}
 <div class="mt-2 text-center">
-    <a href="?ofs={{ next_offset }}">[next]</a>
+    {% if let Some(branch) = branch %}
+        <a href="?h={{ branch }}&ofs={{ next_offset }}">[next]</a>
+    {% else %}
+        <a href="?ofs={{ next_offset }}">[next]</a>
+    {% endif %}
 </div>
 {% endif %}
 {% endblock %}

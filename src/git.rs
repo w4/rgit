@@ -102,12 +102,12 @@ impl Git {
                                 commit: commit.into(),
                             });
                         } else if ref_.is_tag() {
-                            let tag = ref_.peel_to_tag().unwrap();
-
-                            built_refs.tag.push(Tag {
-                                name: ref_.shorthand().unwrap().to_string(),
-                                tagger: tag.tagger().map(Into::into),
-                            });
+                            if let Ok(tag) = ref_.peel_to_tag() {
+                                built_refs.tag.push(Tag {
+                                    name: ref_.shorthand().unwrap().to_string(),
+                                    tagger: tag.tagger().map(Into::into),
+                                });
+                            }
                         }
                     }
 
@@ -284,8 +284,7 @@ impl From<Signature<'_>> for CommitUser {
             name: v.name().unwrap().to_string(),
             email: v.email().unwrap().to_string(),
             email_md5: format!("{:x}", md5::compute(v.email_bytes())),
-            time: OffsetDateTime::from_unix_timestamp(v.when().seconds())
-                .unwrap(),
+            time: OffsetDateTime::from_unix_timestamp(v.when().seconds()).unwrap(),
         }
     }
 }

@@ -14,6 +14,7 @@ use axum::{
 };
 use path_clean::PathClean;
 use serde::Deserialize;
+use syntect::parsing::SyntaxSet;
 use tower::{util::BoxCloneService, Service};
 
 use super::filters;
@@ -205,6 +206,7 @@ pub async fn handle_commit(
     Extension(repo): Extension<Repository>,
     Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
     Extension(git): Extension<Git>,
+    Extension(syntax_set): Extension<Arc<SyntaxSet>>,
     Query(query): Query<CommitQuery>,
 ) -> Html<String> {
     #[derive(Template)]
@@ -218,9 +220,9 @@ pub async fn handle_commit(
         View {
             repo,
             commit: if let Some(commit) = query.id {
-                git.get_commit(repository_path, &commit).await
+                git.get_commit(repository_path, &commit, syntax_set).await
             } else {
-                Arc::new(git.get_latest_commit(repository_path).await)
+                Arc::new(git.get_latest_commit(repository_path, syntax_set).await)
             },
         }
         .render()

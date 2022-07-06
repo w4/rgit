@@ -7,8 +7,12 @@ use std::{
 };
 
 use arc_swap::ArcSwapOption;
-use git2::{ObjectType, Oid, Repository, Signature};
+use git2::{
+    DiffFormat, DiffLineType, DiffOptions, DiffStatsFormat, ObjectType, Oid, Repository, Signature,
+};
 use moka::future::Cache;
+use syntect::html::{ClassStyle, ClassedHTMLGenerator};
+use syntect::parsing::SyntaxSet;
 use time::OffsetDateTime;
 
 pub type RepositoryMetadataList = BTreeMap<Option<String>, Vec<RepositoryMetadata>>;
@@ -42,7 +46,12 @@ impl Default for Git {
 }
 
 impl Git {
-    pub async fn get_commit<'a>(&'a self, repo: PathBuf, commit: &str) -> Arc<Commit> {
+    pub async fn get_commit<'a>(
+        &'a self,
+        repo: PathBuf,
+        commit: &str,
+        syntax_set: Arc<SyntaxSet>,
+    ) -> Arc<Commit> {
         let commit = Oid::from_str(commit).unwrap();
 
         self.commits
@@ -50,8 +59,14 @@ impl Git {
                 tokio::task::spawn_blocking(move || {
                     let repo = Repository::open_bare(repo).unwrap();
                     let commit = repo.find_commit(commit).unwrap();
+                    let (diff_output, diff_stats) =
+                        fetch_diff_and_stats(&repo, &commit, &syntax_set);
 
-                    Arc::new(Commit::from(commit))
+                    let mut commit = Commit::from(commit);
+                    commit.diff_stats = diff_stats;
+                    commit.diff = diff_output;
+
+                    Arc::new(commit)
                 })
                 .await
                 .unwrap()
@@ -153,13 +168,17 @@ impl Git {
             .await
     }
 
-    pub async fn get_latest_commit(&self, repo: PathBuf) -> Commit {
+    pub async fn get_latest_commit(&self, repo: PathBuf, syntax_set: Arc<SyntaxSet>) -> Commit {
         tokio::task::spawn_blocking(move || {
             let repo = Repository::open_bare(repo).unwrap();
             let head = repo.head().unwrap();
             let commit = head.peel_to_commit().unwrap();
+            let (diff_output, diff_stats) = fetch_diff_and_stats(&repo, &commit, &syntax_set);
 
-            Commit::from(commit)
+            let mut commit = Commit::from(commit);
+            commit.diff_stats = diff_stats;
+            commit.diff = diff_output;
+            commit
         })
         .await
         .unwrap()
@@ -316,6 +335,8 @@ pub struct Commit {
     parents: Vec<String>,
     summary: String,
     body: String,
+    pub diff_stats: String,
+    pub diff: String,
 }
 
 impl From<git2::Commit<'_>> for Commit {
@@ -328,6 +349,8 @@ impl From<git2::Commit<'_>> for Commit {
             parents: commit.parent_ids().map(|v| v.to_string()).collect(),
             summary: commit.summary().unwrap().to_string(),
             body: commit.body().map(ToString::to_string).unwrap_or_default(),
+            diff_stats: String::with_capacity(0),
+            diff: String::with_capacity(0),
         }
     }
 }
@@ -360,6 +383,83 @@ impl Commit {
     pub fn body(&self) -> &str {
         &self.body
     }
+}
+
+fn fetch_diff_and_stats(
+    repo: &git2::Repository,
+    commit: &git2::Commit<'_>,
+    syntax_set: &SyntaxSet,
+) -> (String, String) {
+    let current_tree = commit.tree().unwrap();
+    let parent_tree = commit.parents().next().and_then(|v| v.tree().ok());
+    let mut diff_opts = DiffOptions::new();
+    let diff = repo
+        .diff_tree_to_tree(
+            parent_tree.as_ref(),
+            Some(&current_tree),
+            Some(&mut diff_opts),
+        )
+        .unwrap();
+    let diff_stats = diff
+        .stats()
+        .unwrap()
+        .to_buf(DiffStatsFormat::FULL, 80)
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_string();
+    let diff_output = format_diff(&diff, &syntax_set);
+
+    (diff_output, diff_stats)
+}
+
+fn format_diff(diff: &git2::Diff<'_>, syntax_set: &SyntaxSet) -> String {
+    let mut diff_output = String::new();
+
+    diff.print(DiffFormat::Patch, |delta, _diff_hunk, diff_line| {
+        let (class, prefix, should_highlight_as_source) = match diff_line.origin_value() {
+            DiffLineType::Addition => (Some("add-line"), "+", true),
+            DiffLineType::Deletion => (Some("remove-line"), "-", true),
+            DiffLineType::Context => (None, " ", true),
+            DiffLineType::AddEOFNL => (Some("remove-line"), "", false),
+            DiffLineType::DeleteEOFNL => (Some("add-line"), "", false),
+            DiffLineType::FileHeader => (Some("file-header"), "", false),
+            _ => (None, "", false),
+        };
+
+        let line = std::str::from_utf8(diff_line.content()).unwrap();
+
+        let extension = if should_highlight_as_source {
+            let path = delta.new_file().path().unwrap();
+            path.extension()
+                .or(path.file_name())
+                .unwrap()
+                .to_string_lossy()
+        } else {
+            Cow::Borrowed("patch")
+        };
+        let syntax = syntax_set
+            .find_syntax_by_extension(&extension)
+            .unwrap_or(syntax_set.find_syntax_plain_text());
+        let mut html_generator =
+            ClassedHTMLGenerator::new_with_class_style(syntax, &syntax_set, ClassStyle::Spaced);
+        html_generator
+            .parse_html_for_line_which_includes_newline(line)
+            .unwrap();
+        if let Some(class) = class {
+            diff_output.push_str(&format!("<span class=\"diff-{class}\">"));
+        }
+        diff_output.push_str(prefix);
+        diff_output.push_str(&html_generator.finalize());
+        if class.is_some() {
+            diff_output.push_str("</span>");
+        }
+
+        true
+    })
+    .unwrap();
+
+    diff_output
 }
 
 fn fetch_repository_metadata_impl(

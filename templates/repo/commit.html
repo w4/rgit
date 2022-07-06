@@ -1,5 +1,9 @@
 {% extends "repo/base.html" %}
 
+{% block head %}
+<link rel="stylesheet" type="text/css" href="/highlight.css" />
+{% endblock %}
+
 {% block commit_nav_class %}active{% endblock %}
 
 {% block content %}
@@ -34,4 +38,8 @@
 
 <h2>{{ commit.summary() }}</h2>
 <pre>{{ commit.body() }}</pre>
+
+<h3>Diff</h3>
+<pre>{{ commit.diff_stats|safe }}
+{{ commit.diff|safe }}</pre>
 {% endblock %}

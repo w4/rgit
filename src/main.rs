@@ -4,6 +4,9 @@ use axum::{
     body::Body, handler::Handler, http::HeaderValue, response::Response, routing::get, Extension,
     Router,
 };
+use bat::assets::HighlightingAssets;
+use std::sync::Arc;
+use syntect::html::ClassStyle;
 use tower_layer::layer_fn;
 
 use crate::{git::Git, layers::logger::LoggingMiddleware};
@@ -21,15 +24,27 @@ async fn main() {
     let subscriber = subscriber.pretty();
     subscriber.init();
 
+    let bat_assets = HighlightingAssets::from_binary();
+    let syntax_set = bat_assets.get_syntax_set().unwrap().clone();
+    let theme = bat_assets.get_theme("GitHub");
+    let css = Box::leak(
+        syntect::html::css_for_theme_with_class_style(theme, ClassStyle::Spaced)
+            .unwrap()
+            .into_boxed_str()
+            .into_boxed_bytes(),
+    );
+
     let app = Router::new()
         .route("/", get(methods::index::handle))
         .route(
             "/style.css",
             get(static_css(include_bytes!("../statics/style.css"))),
         )
+        .route("/highlight.css", get(static_css(css)))
         .fallback(methods::repo::service.into_service())
         .layer(layer_fn(LoggingMiddleware))
-        .layer(Extension(Git::default()));
+        .layer(Extension(Git::default()))
+        .layer(Extension(Arc::new(syntax_set)));
 
     axum::Server::bind(&"127.0.0.1:3333".parse().unwrap())
         .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())

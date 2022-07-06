@@ -91,3 +91,22 @@ pre.h2-first-line::first-line {
     font-size: 1.5em;
     font-weight: bold;
 }
+
+
+.diff-file-header {
+    font-weight: bold;
+}
+
+.diff-file-header > span > span {
+    font-weight: normal;
+}
+
+.diff-add-line {
+    background: #e6ffec;
+    display: block;
+}
+
+.diff-remove-line {
+    background: #ffebe9;
+    display: block;
+}

@@ -26,28 +26,37 @@
     </tr>
     {% endfor %}
     </tbody>
-</table>
 
-<table class="repositories mt-2">
-    <thead>
+    <tbody>
+    <tr class="separator">
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+    </tr>
+
     <tr>
         <th>Tag</th>
         <th>Download</th>
         <th>Author</th>
         <th>Age</th>
     </tr>
-    </thead>
 
-    <tbody>
-    {% for tag in refs.tag %}
+    {% for tag in refs.tag.iter().rev() %}
     <tr>
         <td><a href="/{{ repo.display() }}/tag/?h={{ tag.name }}">{{ tag.name }}</a></td>
         <td></td>
         <td>
-            <img src="https://www.gravatar.com/avatar/{{ tag.commit.author().email_md5() }}?s=13&d=retro" width="13" height="13">
-            {{ tag.commit.author().name() }}
+            {% if let Some(tagger) = tag.tagger %}
+                <img src="https://www.gravatar.com/avatar/{{ tagger.email_md5() }}?s=13&d=retro" width="13" height="13">
+                {{ tagger.name() }}
+            {% endif %}
         </td>
-        <td>{{ tag.commit.author().time() }}</td>
+        <td>
+            {% if let Some(tagger) = tag.tagger %}
+                {{ tagger.time() }}
+            {% endif %}
+        </td>
     </tr>
     {% endfor %}
     </tbody>

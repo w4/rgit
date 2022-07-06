@@ -33,6 +33,10 @@ a:hover {
     margin-top: 2rem;
 }
 
+.text-center {
+    text-align: center;
+}
+
 .no-hover:hover {
     text-decoration: none;
 }
@@ -50,6 +54,11 @@ table.repositories tbody tr:nth-child(odd) {
 
 table tbody tr.has-parent td:first-of-type {
     padding-left: 1rem;
+}
+
+tr.separator {
+    background: white !important;
+    height: 1rem;
 }
 
 table pre { margin: 0; }

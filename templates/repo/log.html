@@ -25,4 +25,10 @@
     {% endfor %}
     </tbody>
 </table>
+
+{% if let Some(next_offset) = next_offset %}
+<div class="mt-2 text-center">
+    <a href="?ofs={{ next_offset }}">[next]</a>
+</div>
+{% endif %}
 {% endblock %}

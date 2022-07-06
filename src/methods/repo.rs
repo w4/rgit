@@ -89,22 +89,40 @@ pub async fn handle_summary(Extension(repo): Extension<Repository>) -> Html<Stri
     Html(View { repo }.render().unwrap())
 }
 
+#[derive(Deserialize)]
+pub struct LogQuery {
+    #[serde(rename = "ofs")]
+    offset: Option<usize>,
+}
+
 #[allow(clippy::unused_async)]
 pub async fn handle_log(
     Extension(repo): Extension<Repository>,
     Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
     Extension(git): Extension<Git>,
+    Query(query): Query<LogQuery>,
 ) -> Html<String> {
     #[derive(Template)]
     #[template(path = "repo/log.html")]
     pub struct View {
         repo: Repository,
         commits: Vec<Commit>,
+        next_offset: Option<usize>,
     }
 
-    let commits = git.get_commits(repository_path).await;
+    let (commits, next_offset) = git
+        .get_commits(repository_path, query.offset.unwrap_or(0))
+        .await;
 
-    Html(View { repo, commits }.render().unwrap())
+    Html(
+        View {
+            repo,
+            commits,
+            next_offset,
+        }
+        .render()
+        .unwrap(),
+    )
 }
 
 #[allow(clippy::unused_async)]

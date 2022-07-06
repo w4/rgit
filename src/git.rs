@@ -7,25 +7,35 @@ use std::{
 };
 
 use arc_swap::ArcSwapOption;
-use git2::{Oid, Repository, Signature, Sort};
+use git2::{ObjectType, Oid, Repository, Signature};
+use moka::future::Cache;
 use time::OffsetDateTime;
 
 pub type RepositoryMetadataList = BTreeMap<Option<String>, Vec<RepositoryMetadata>>;
 
 #[derive(Clone)]
 pub struct Git {
-    commits: moka::future::Cache<Oid, Arc<Commit>>,
-    readme_cache: moka::future::Cache<PathBuf, Arc<str>>,
-    refs: moka::future::Cache<PathBuf, Arc<Refs>>,
+    commits: Cache<Oid, Arc<Commit>>,
+    readme_cache: Cache<PathBuf, Arc<str>>,
+    refs: Cache<PathBuf, Arc<Refs>>,
     repository_metadata: Arc<ArcSwapOption<RepositoryMetadataList>>,
 }
 
 impl Default for Git {
     fn default() -> Self {
         Self {
-            commits: moka::future::Cache::new(100),
-            readme_cache: moka::future::Cache::new(100),
-            refs: moka::future::Cache::new(100),
+            commits: Cache::builder()
+                .time_to_live(Duration::from_secs(10))
+                .max_capacity(100)
+                .build(),
+            readme_cache: Cache::builder()
+                .time_to_live(Duration::from_secs(10))
+                .max_capacity(100)
+                .build(),
+            refs: Cache::builder()
+                .time_to_live(Duration::from_secs(10))
+                .max_capacity(100)
+                .build(),
             repository_metadata: Arc::new(ArcSwapOption::default()),
         }
     }
@@ -69,11 +79,11 @@ impl Git {
                                 commit: commit.into(),
                             });
                         } else if ref_.is_tag() {
-                            let commit = ref_.peel_to_commit().unwrap();
+                            let tag = ref_.peel_to_tag().unwrap();
 
                             built_refs.tag.push(Tag {
                                 name: ref_.shorthand().unwrap().to_string(),
-                                commit: commit.into(),
+                                tagger: tag.tagger().map(Into::into),
                             });
                         }
                     }
@@ -143,22 +153,27 @@ impl Git {
         repos
     }
 
-    pub async fn get_commits(&self, repo: PathBuf) -> Vec<Commit> {
+    pub async fn get_commits(&self, repo: PathBuf, offset: usize) -> (Vec<Commit>, Option<usize>) {
+        const AMOUNT: usize = 200;
+
         tokio::task::spawn_blocking(move || {
             let repo = Repository::open_bare(repo).unwrap();
             let mut revs = repo.revwalk().unwrap();
-            revs.set_sorting(Sort::TIME).unwrap();
             revs.push_head().unwrap();
 
-            let mut commits = Vec::with_capacity(200);
+            let mut commits: Vec<Commit> = revs
+                .skip(offset)
+                .take(AMOUNT + 1)
+                .map(|rev| {
+                    let rev = rev.unwrap();
+                    repo.find_commit(rev).unwrap().into()
+                })
+                .collect();
 
-            for rev in revs.skip(0).take(200) {
-                let rev = rev.unwrap();
-                let commit = repo.find_commit(rev).unwrap();
-                commits.push(commit.into());
-            }
+            // TODO: avoid having to take + 1 and popping the last commit off
+            let next_offset = commits.pop().is_some().then(|| offset + commits.len());
 
-            commits
+            (commits, next_offset)
         })
         .await
         .unwrap()
@@ -185,7 +200,7 @@ pub struct Remote {
 #[derive(Debug)]
 pub struct Tag {
     pub name: String,
-    pub commit: Commit,
+    pub tagger: Option<CommitUser>,
 }
 
 #[derive(Debug)]

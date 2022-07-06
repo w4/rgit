@@ -111,14 +111,21 @@ pub async fn handle_refs(Extension(repo): Extension<Repository>) -> Html<String>
 }
 
 #[allow(clippy::unused_async)]
-pub async fn handle_about(Extension(repo): Extension<Repository>) -> Html<String> {
+pub async fn handle_about(
+    Extension(repo): Extension<Repository>,
+    Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
+    Extension(git): Extension<Git>
+) -> Html<String> {
     #[derive(Template)]
     #[template(path = "repo/about.html")]
     pub struct View {
         repo: Repository,
+        readme: Arc<str>,
     }
 
-    Html(View { repo }.render().unwrap())
+    let readme = git.get_readme(repository_path).await;
+
+    Html(View { repo, readme }.render().unwrap())
 }
 
 #[derive(Deserialize)]

@@ -14,7 +14,8 @@ pub type RepositoryMetadataList = BTreeMap<Option<String>, Vec<RepositoryMetadat
 
 #[derive(Clone)]
 pub struct Git {
-    commits: moka::future::Cache<String, Arc<Commit>>,
+    commits: moka::future::Cache<Oid, Arc<Commit>>,
+    readme_cache: moka::future::Cache<PathBuf, Arc<str>>,
     repository_metadata: Arc<ArcSwapOption<RepositoryMetadataList>>,
 }
 
@@ -22,6 +23,7 @@ impl Default for Git {
     fn default() -> Self {
         Self {
             commits: moka::future::Cache::new(100),
+            readme_cache: moka::future::Cache::new(100),
             repository_metadata: Arc::new(ArcSwapOption::default()),
         }
     }
@@ -32,12 +34,32 @@ impl Git {
         let commit = Oid::from_str(commit).unwrap();
 
         self.commits
-            .get_with(commit.to_string(), async {
+            .get_with(commit, async {
                 tokio::task::spawn_blocking(move || {
                     let repo = Repository::open_bare(repo).unwrap();
                     let commit = repo.find_commit(commit).unwrap();
 
                     Arc::new(Commit::from(commit))
+                })
+                .await
+                .unwrap()
+            })
+            .await
+    }
+
+    pub async fn get_readme(&self, repo: PathBuf) -> Arc<str> {
+        self.readme_cache
+            .get_with(repo.clone(), async {
+                tokio::task::spawn_blocking(move || {
+                    let repo = Repository::open_bare(repo).unwrap();
+                    let head = repo.head().unwrap();
+                    let commit = head.peel_to_commit().unwrap();
+                    let tree = commit.tree().unwrap();
+
+                    let object = tree.get_name("README.md").unwrap().to_object(&repo).unwrap();
+                    let blob = object.into_blob().unwrap();
+
+                    Arc::from(String::from_utf8(blob.content().to_vec()).unwrap())
                 })
                 .await
                 .unwrap()

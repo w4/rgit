@@ -17,6 +17,7 @@ use serde::Deserialize;
 use tower::{util::BoxCloneService, Service};
 
 use crate::{git::Commit, layers::UnwrapInfallible, Git};
+use crate::git::Refs;
 
 #[derive(Clone)]
 pub struct Repository(pub PathBuf);
@@ -100,21 +101,28 @@ pub async fn handle_log(Extension(repo): Extension<Repository>) -> Html<String> 
 }
 
 #[allow(clippy::unused_async)]
-pub async fn handle_refs(Extension(repo): Extension<Repository>) -> Html<String> {
+pub async fn handle_refs(
+    Extension(repo): Extension<Repository>,
+    Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
+    Extension(git): Extension<Git>,
+) -> Html<String> {
     #[derive(Template)]
     #[template(path = "repo/refs.html")]
     pub struct View {
         repo: Repository,
+        refs: Arc<Refs>,
     }
 
-    Html(View { repo }.render().unwrap())
+    let refs = git.get_refs(repository_path).await;
+
+    Html(View { repo, refs }.render().unwrap())
 }
 
 #[allow(clippy::unused_async)]
 pub async fn handle_about(
     Extension(repo): Extension<Repository>,
     Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
-    Extension(git): Extension<Git>
+    Extension(git): Extension<Git>,
 ) -> Html<String> {
     #[derive(Template)]
     #[template(path = "repo/about.html")]

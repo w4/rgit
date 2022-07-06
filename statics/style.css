@@ -29,6 +29,10 @@ a:hover {
     text-decoration: underline;
 }
 
+.mt-2 {
+    margin-top: 2rem;
+}
+
 table { border-collapse: collapse; }
 table.repositories { width: 100%; }
 table.repositories a { color: black; }

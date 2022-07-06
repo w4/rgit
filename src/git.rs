@@ -16,6 +16,7 @@ pub type RepositoryMetadataList = BTreeMap<Option<String>, Vec<RepositoryMetadat
 pub struct Git {
     commits: moka::future::Cache<Oid, Arc<Commit>>,
     readme_cache: moka::future::Cache<PathBuf, Arc<str>>,
+    refs: moka::future::Cache<PathBuf, Arc<Refs>>,
     repository_metadata: Arc<ArcSwapOption<RepositoryMetadataList>>,
 }
 
@@ -24,6 +25,7 @@ impl Default for Git {
         Self {
             commits: moka::future::Cache::new(100),
             readme_cache: moka::future::Cache::new(100),
+            refs: moka::future::Cache::new(100),
             repository_metadata: Arc::new(ArcSwapOption::default()),
         }
     }
@@ -45,6 +47,43 @@ impl Git {
                 .unwrap()
             })
             .await
+    }
+
+    pub async fn get_refs<'a>(&'a self, repo: PathBuf) -> Arc<Refs> {
+        self.refs
+            .get_with(repo.clone(), async {
+            tokio::task::spawn_blocking(move || {
+                let repo = git2::Repository::open_bare(repo).unwrap();
+                let refs = repo.references().unwrap();
+
+                let mut built_refs = Refs::default();
+
+                for ref_ in refs {
+                    let ref_ = ref_.unwrap();
+
+                    if ref_.is_branch() {
+                        let commit = ref_.peel_to_commit().unwrap();
+
+                        built_refs.branch.push(Branch {
+                            name: ref_.shorthand().unwrap().to_string(),
+                            commit: commit.into(),
+                        });
+                    } else if ref_.is_tag() {
+                        let commit = ref_.peel_to_commit().unwrap();
+
+                        built_refs.tag.push(Tag {
+                            name: ref_.shorthand().unwrap().to_string(),
+                            commit: commit.into(),
+                        });
+                    }
+                }
+
+                Arc::new(built_refs)
+            })
+            .await
+            .unwrap()
+        })
+        .await
     }
 
     pub async fn get_readme(&self, repo: PathBuf) -> Arc<str> {
@@ -101,6 +140,29 @@ impl Git {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct Refs {
+    pub branch: Vec<Branch>,
+    pub tag: Vec<Tag>,
+}
+
+#[derive(Debug)]
+pub struct Branch {
+    pub name: String,
+    pub commit: Commit,
+}
+
+#[derive(Debug)]
+pub struct Remote {
+    pub name: String,
+}
+
+#[derive(Debug)]
+pub struct Tag {
+    pub name: String,
+    pub commit: Commit,
+}
+
 #[derive(Debug)]
 pub struct RepositoryMetadata {
     pub name: String,
@@ -109,9 +171,11 @@ pub struct RepositoryMetadata {
     pub last_modified: Duration,
 }
 
+#[derive(Debug)]
 pub struct CommitUser {
     name: String,
     email: String,
+    email_md5: String,
     time: String,
 }
 
@@ -120,6 +184,7 @@ impl From<Signature<'_>> for CommitUser {
         CommitUser {
             name: v.name().unwrap().to_string(),
             email: v.email().unwrap().to_string(),
+            email_md5: format!("{:x}", md5::compute(v.email_bytes())),
             time: OffsetDateTime::from_unix_timestamp(v.when().seconds())
                 .unwrap()
                 .to_string(),
@@ -136,11 +201,16 @@ impl CommitUser {
         &self.email
     }
 
+    pub fn email_md5(&self) -> &str {
+        &self.email_md5
+    }
+
     pub fn time(&self) -> &str {
         &self.time
     }
 }
 
+#[derive(Debug)]
 pub struct Commit {
     author: CommitUser,
     committer: CommitUser,

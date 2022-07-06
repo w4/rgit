@@ -3,4 +3,53 @@
 {% block refs_nav_class %}active{% endblock %}
 
 {% block content %}
+<table class="repositories">
+    <thead>
+    <tr>
+        <th>Branch</th>
+        <th>Commit message</th>
+        <th>Author</th>
+        <th>Age</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    {% for branch in refs.branch %}
+    <tr>
+        <td><a href="/{{ repo.display() }}/log/?h={{ branch.name }}">{{ branch.name }}</a></td>
+        <td><a href="/{{ repo.display() }}/commit/?id={{ branch.commit.oid() }}">{{ branch.commit.summary() }}</a></td>
+        <td>
+            <img src="https://www.gravatar.com/avatar/{{ branch.commit.author().email_md5() }}?s=13&d=retro" width="13" height="13">
+            {{ branch.commit.author().name() }}
+        </td>
+        <td>{{ branch.commit.author().time() }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+<table class="repositories mt-2">
+    <thead>
+    <tr>
+        <th>Tag</th>
+        <th>Download</th>
+        <th>Author</th>
+        <th>Age</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    {% for tag in refs.tag %}
+    <tr>
+        <td><a href="/{{ repo.display() }}/tag/?h={{ tag.name }}">{{ tag.name }}</a></td>
+        <td></td>
+        <td>
+            <img src="https://www.gravatar.com/avatar/{{ tag.commit.author().email_md5() }}?s=13&d=retro" width="13" height="13">
+            {{ tag.commit.author().name() }}
+        </td>
+        <td>{{ tag.commit.author().time() }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
 {% endblock %}

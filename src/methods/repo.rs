@@ -59,7 +59,6 @@ pub async fn service<ReqBody: Send + 'static>(mut request: Request<ReqBody>) -> 
         Some("tree") => BoxCloneService::new(handle_tree.into_service()),
         Some("commit") => BoxCloneService::new(handle_commit.into_service()),
         Some("diff") => BoxCloneService::new(handle_diff.into_service()),
-        Some("stats") => BoxCloneService::new(handle_stats.into_service()),
         Some("tag") => BoxCloneService::new(handle_tag.into_service()),
         Some(v) => {
             uri_parts.push(v);
@@ -268,15 +267,4 @@ pub async fn handle_diff(
         .render()
         .unwrap(),
     )
-}
-
-#[allow(clippy::unused_async)]
-pub async fn handle_stats(Extension(repo): Extension<Repository>) -> Html<String> {
-    #[derive(Template)]
-    #[template(path = "repo/stats.html")]
-    pub struct View {
-        pub repo: Repository,
-    }
-
-    Html(View { repo }.render().unwrap())
 }

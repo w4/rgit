@@ -14,7 +14,6 @@ use axum::{
 };
 use path_clean::PathClean;
 use serde::Deserialize;
-use syntect::parsing::SyntaxSet;
 use tower::{util::BoxCloneService, Service};
 
 use super::filters;
@@ -100,7 +99,7 @@ pub struct TagQuery {
 pub async fn handle_tag(
     Extension(repo): Extension<Repository>,
     Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
-    Extension(git): Extension<Git>,
+    Extension(git): Extension<Arc<Git>>,
     Query(query): Query<TagQuery>,
 ) -> Html<String> {
     #[derive(Template)]
@@ -110,7 +109,8 @@ pub async fn handle_tag(
         tag: DetailedTag,
     }
 
-    let tag = git.get_tag(repository_path, &query.name).await;
+    let open_repo = git.repo(repository_path).await;
+    let tag = open_repo.tag_info(&query.name).await;
 
     Html(View { repo, tag }.render().unwrap())
 }
@@ -127,7 +127,7 @@ pub struct LogQuery {
 pub async fn handle_log(
     Extension(repo): Extension<Repository>,
     Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
-    Extension(git): Extension<Git>,
+    Extension(git): Extension<Arc<Git>>,
     Query(query): Query<LogQuery>,
 ) -> Html<String> {
     #[derive(Template)]
@@ -139,12 +139,9 @@ pub async fn handle_log(
         branch: Option<String>,
     }
 
-    let (commits, next_offset) = git
-        .get_commits(
-            repository_path,
-            query.branch.as_deref(),
-            query.offset.unwrap_or(0),
-        )
+    let open_repo = git.repo(repository_path).await;
+    let (commits, next_offset) = open_repo
+        .commits(query.branch.as_deref(), query.offset.unwrap_or(0))
         .await;
 
     Html(
@@ -163,7 +160,7 @@ pub async fn handle_log(
 pub async fn handle_refs(
     Extension(repo): Extension<Repository>,
     Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
-    Extension(git): Extension<Git>,
+    Extension(git): Extension<Arc<Git>>,
 ) -> Html<String> {
     #[derive(Template)]
     #[template(path = "repo/refs.html")]
@@ -172,7 +169,8 @@ pub async fn handle_refs(
         refs: Arc<Refs>,
     }
 
-    let refs = git.get_refs(repository_path).await;
+    let open_repo = git.repo(repository_path).await;
+    let refs = open_repo.refs().await;
 
     Html(View { repo, refs }.render().unwrap())
 }
@@ -181,7 +179,7 @@ pub async fn handle_refs(
 pub async fn handle_about(
     Extension(repo): Extension<Repository>,
     Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
-    Extension(git): Extension<Git>,
+    Extension(git): Extension<Arc<Git>>,
 ) -> Html<String> {
     #[derive(Template)]
     #[template(path = "repo/about.html")]
@@ -190,7 +188,8 @@ pub async fn handle_about(
         readme: Option<Arc<str>>,
     }
 
-    let readme = git.get_readme(repository_path).await;
+    let open_repo = git.clone().repo(repository_path).await;
+    let readme = open_repo.readme().await;
 
     Html(View { repo, readme }.render().unwrap())
 }
@@ -204,8 +203,7 @@ pub struct CommitQuery {
 pub async fn handle_commit(
     Extension(repo): Extension<Repository>,
     Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
-    Extension(git): Extension<Git>,
-    Extension(syntax_set): Extension<Arc<SyntaxSet>>,
+    Extension(git): Extension<Arc<Git>>,
     Query(query): Query<CommitQuery>,
 ) -> Html<String> {
     #[derive(Template)]
@@ -215,18 +213,14 @@ pub async fn handle_commit(
         pub commit: Arc<Commit>,
     }
 
-    Html(
-        View {
-            repo,
-            commit: if let Some(commit) = query.id {
-                git.get_commit(repository_path, &commit, syntax_set).await
-            } else {
-                Arc::new(git.get_latest_commit(repository_path, syntax_set).await)
-            },
-        }
-        .render()
-        .unwrap(),
-    )
+    let open_repo = git.repo(repository_path).await;
+    let commit = if let Some(commit) = query.id {
+        open_repo.commit(&commit).await
+    } else {
+        Arc::new(open_repo.latest_commit().await)
+    };
+
+    Html(View { repo, commit }.render().unwrap())
 }
 
 #[allow(clippy::unused_async)]
@@ -244,8 +238,7 @@ pub async fn handle_tree(Extension(repo): Extension<Repository>) -> Html<String>
 pub async fn handle_diff(
     Extension(repo): Extension<Repository>,
     Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
-    Extension(git): Extension<Git>,
-    Extension(syntax_set): Extension<Arc<SyntaxSet>>,
+    Extension(git): Extension<Arc<Git>>,
     Query(query): Query<CommitQuery>,
 ) -> Html<String> {
     #[derive(Template)]
@@ -255,16 +248,12 @@ pub async fn handle_diff(
         pub commit: Arc<Commit>,
     }
 
-    Html(
-        View {
-            repo,
-            commit: if let Some(commit) = query.id {
-                git.get_commit(repository_path, &commit, syntax_set).await
-            } else {
-                Arc::new(git.get_latest_commit(repository_path, syntax_set).await)
-            },
-        }
-        .render()
-        .unwrap(),
-    )
+    let open_repo = git.repo(repository_path).await;
+    let commit = if let Some(commit) = query.id {
+        open_repo.commit(&commit).await
+    } else {
+        Arc::new(open_repo.latest_commit().await)
+    };
+
+    Html(View { repo, commit }.render().unwrap())
 }

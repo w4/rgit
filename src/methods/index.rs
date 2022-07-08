@@ -7,7 +7,7 @@ use super::filters;
 use crate::{git::RepositoryMetadataList, Git};
 
 #[allow(clippy::unused_async)]
-pub async fn handle(Extension(git): Extension<Git>) -> Html<String> {
+pub async fn handle(Extension(git): Extension<Arc<Git>>) -> Html<String> {
     #[derive(Template)]
     #[template(path = "index.html")]
     pub struct View {

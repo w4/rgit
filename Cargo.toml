@@ -18,6 +18,7 @@ humantime = "2.1"
 md5 = "0.7"
 moka = { version = "0.9", features = ["future"] }
 path-clean = "0.1"
+parking_lot = "0.12"
 serde = { version = "1.0", features = ["derive"] }
 syntect = "5"
 time = "0.3"

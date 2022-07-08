@@ -43,8 +43,7 @@ async fn main() {
         .route("/highlight.css", get(static_css(css)))
         .fallback(methods::repo::service.into_service())
         .layer(layer_fn(LoggingMiddleware))
-        .layer(Extension(Git::default()))
-        .layer(Extension(Arc::new(syntax_set)));
+        .layer(Extension(Arc::new(Git::new(syntax_set))));
 
     axum::Server::bind(&"127.0.0.1:3333".parse().unwrap())
         .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())

@@ -11,22 +11,25 @@ use git2::{
     DiffFormat, DiffLineType, DiffOptions, DiffStatsFormat, ObjectType, Oid, Repository, Signature,
 };
 use moka::future::Cache;
+use parking_lot::Mutex;
 use syntect::html::{ClassStyle, ClassedHTMLGenerator};
 use syntect::parsing::SyntaxSet;
 use time::OffsetDateTime;
+use tracing::instrument;
 
 pub type RepositoryMetadataList = BTreeMap<Option<String>, Vec<RepositoryMetadata>>;
 
-#[derive(Clone)]
 pub struct Git {
     commits: Cache<Oid, Arc<Commit>>,
     readme_cache: Cache<PathBuf, Option<Arc<str>>>,
     refs: Cache<PathBuf, Arc<Refs>>,
-    repository_metadata: Arc<ArcSwapOption<RepositoryMetadataList>>,
+    repository_metadata: ArcSwapOption<RepositoryMetadataList>,
+    syntax_set: SyntaxSet,
 }
 
-impl Default for Git {
-    fn default() -> Self {
+impl Git {
+    #[instrument(skip(syntax_set))]
+    pub fn new(syntax_set: SyntaxSet) -> Self {
         Self {
             commits: Cache::builder()
                 .time_to_live(Duration::from_secs(10))
@@ -40,68 +43,100 @@ impl Default for Git {
                 .time_to_live(Duration::from_secs(10))
                 .max_capacity(100)
                 .build(),
-            repository_metadata: Arc::new(ArcSwapOption::default()),
+            repository_metadata: ArcSwapOption::default(),
+            syntax_set,
         }
     }
 }
 
 impl Git {
-    pub async fn get_commit<'a>(
-        &'a self,
-        repo: PathBuf,
-        commit: &str,
-        syntax_set: Arc<SyntaxSet>,
-    ) -> Arc<Commit> {
-        let commit = Oid::from_str(commit).unwrap();
+    #[instrument(skip(self))]
+    pub async fn repo(self: Arc<Self>, repo_path: PathBuf) -> Arc<OpenRepository> {
+        let repo = tokio::task::spawn_blocking({
+            let repo_path = repo_path.clone();
+            move || git2::Repository::open(repo_path).unwrap()
+        })
+        .await
+        .unwrap();
 
-        self.commits
-            .get_with(commit, async {
-                tokio::task::spawn_blocking(move || {
-                    let repo = Repository::open_bare(repo).unwrap();
-                    let commit = repo.find_commit(commit).unwrap();
-                    let (diff_output, diff_stats) =
-                        fetch_diff_and_stats(&repo, &commit, &syntax_set);
-
-                    let mut commit = Commit::from(commit);
-                    commit.diff_stats = diff_stats;
-                    commit.diff = diff_output;
-
-                    Arc::new(commit)
-                })
-                .await
-                .unwrap()
-            })
-            .await
+        Arc::new(OpenRepository {
+            git: self,
+            cache_key: repo_path,
+            repo: Mutex::new(repo),
+        })
     }
 
-    pub async fn get_tag(&self, repo: PathBuf, tag_name: &str) -> DetailedTag {
-        let repo = Repository::open_bare(repo).unwrap();
-        let tag = repo
-            .find_reference(&format!("refs/tags/{tag_name}"))
-            .unwrap()
-            .peel_to_tag()
-            .unwrap();
-        let tag_target = tag.target().unwrap();
-
-        let tagged_object = match tag_target.kind() {
-            Some(ObjectType::Commit) => Some(TaggedObject::Commit(tag_target.id().to_string())),
-            Some(ObjectType::Tree) => Some(TaggedObject::Tree(tag_target.id().to_string())),
-            None | Some(_) => None,
-        };
-
-        DetailedTag {
-            name: tag_name.to_string(),
-            tagger: tag.tagger().map(Into::into),
-            message: tag.message().unwrap().to_string(),
-            tagged_object,
+    #[instrument(skip(self))]
+    pub async fn fetch_repository_metadata(&self) -> Arc<RepositoryMetadataList> {
+        if let Some(metadata) = self.repository_metadata.load().as_ref() {
+            return Arc::clone(metadata);
         }
+
+        let start = Path::new("../test-git").canonicalize().unwrap();
+
+        let repos = tokio::task::spawn_blocking(move || {
+            let mut repos: RepositoryMetadataList = RepositoryMetadataList::new();
+            fetch_repository_metadata_impl(&start, &start, &mut repos);
+            repos
+        })
+        .await
+        .unwrap();
+
+        let repos = Arc::new(repos);
+        self.repository_metadata.store(Some(repos.clone()));
+
+        repos
+    }
+}
+
+pub struct OpenRepository {
+    git: Arc<Git>,
+    cache_key: PathBuf,
+    repo: Mutex<git2::Repository>,
+}
+
+impl OpenRepository {
+    #[instrument(skip(self))]
+    pub async fn tag_info(self: Arc<Self>, tag_name: &str) -> DetailedTag {
+        let reference = format!("refs/tags/{tag_name}");
+        let tag_name = tag_name.to_string();
+
+        tokio::task::spawn_blocking(move || {
+            let repo = self.repo.lock();
+
+            let tag = repo
+                .find_reference(&reference)
+                .unwrap()
+                .peel_to_tag()
+                .unwrap();
+            let tag_target = tag.target().unwrap();
+
+            let tagged_object = match tag_target.kind() {
+                Some(ObjectType::Commit) => Some(TaggedObject::Commit(tag_target.id().to_string())),
+                Some(ObjectType::Tree) => Some(TaggedObject::Tree(tag_target.id().to_string())),
+                None | Some(_) => None,
+            };
+
+            DetailedTag {
+                name: tag_name,
+                tagger: tag.tagger().map(Into::into),
+                message: tag.message().unwrap().to_string(),
+                tagged_object,
+            }
+        })
+        .await
+        .unwrap()
     }
 
-    pub async fn get_refs(&self, repo: PathBuf) -> Arc<Refs> {
-        self.refs
-            .get_with(repo.clone(), async {
+    #[instrument(skip(self))]
+    pub async fn refs(self: Arc<Self>) -> Arc<Refs> {
+        let git = self.git.clone();
+
+        git.refs
+            .get_with(self.cache_key.clone(), async move {
                 tokio::task::spawn_blocking(move || {
-                    let repo = git2::Repository::open_bare(repo).unwrap();
+                    let repo = self.repo.lock();
+
                     let ref_iter = repo.references().unwrap();
 
                     let mut built_refs = Refs::default();
@@ -134,33 +169,34 @@ impl Git {
             .await
     }
 
-    pub async fn get_readme(&self, repo: PathBuf) -> Option<Arc<str>> {
+    #[instrument(skip(self))]
+    pub async fn readme(self: Arc<Self>) -> Option<Arc<str>> {
         const README_FILES: &[&str] = &["README.md", "README", "README.txt"];
 
-        self.readme_cache
-            .get_with(repo.clone(), async {
+        let git = self.git.clone();
+
+        git.readme_cache
+            .get_with(self.cache_key.clone(), async move {
                 tokio::task::spawn_blocking(move || {
-                    let repo = Repository::open_bare(repo).unwrap();
+                    let repo = self.repo.lock();
+
                     let head = repo.head().unwrap();
                     let commit = head.peel_to_commit().unwrap();
                     let tree = commit.tree().unwrap();
 
-                    for file in README_FILES {
-                        let object = if let Some(o) = tree.get_name(file) {
-                            o
-                        } else {
-                            continue;
-                        };
+                    let blob = README_FILES
+                        .iter()
+                        .map(|file| tree.get_name(file))
+                        .next()
+                        .flatten()?
+                        .to_object(&repo)
+                        .unwrap()
+                        .into_blob()
+                        .unwrap();
 
-                        let object = object.to_object(&repo).unwrap();
-                        let blob = object.into_blob().unwrap();
-
-                        return Some(Arc::from(
-                            String::from_utf8(blob.content().to_vec()).unwrap(),
-                        ));
-                    }
-
-                    None
+                    Some(Arc::from(
+                        String::from_utf8(blob.content().to_vec()).unwrap(),
+                    ))
                 })
                 .await
                 .unwrap()
@@ -168,12 +204,15 @@ impl Git {
             .await
     }
 
-    pub async fn get_latest_commit(&self, repo: PathBuf, syntax_set: Arc<SyntaxSet>) -> Commit {
+    #[instrument(skip(self))]
+    pub async fn latest_commit(self: Arc<Self>) -> Commit {
         tokio::task::spawn_blocking(move || {
-            let repo = Repository::open_bare(repo).unwrap();
+            let repo = self.repo.lock();
+
             let head = repo.head().unwrap();
             let commit = head.peel_to_commit().unwrap();
-            let (diff_output, diff_stats) = fetch_diff_and_stats(&repo, &commit, &syntax_set);
+            let (diff_output, diff_stats) =
+                fetch_diff_and_stats(&repo, &commit, &self.git.syntax_set);
 
             let mut commit = Commit::from(commit);
             commit.diff_stats = diff_stats;
@@ -184,39 +223,45 @@ impl Git {
         .unwrap()
     }
 
-    pub async fn fetch_repository_metadata(&self) -> Arc<RepositoryMetadataList> {
-        if let Some(metadata) = self.repository_metadata.load().as_ref() {
-            return Arc::clone(metadata);
-        }
+    #[instrument(skip(self))]
+    pub async fn commit(self: Arc<Self>, commit: &str) -> Arc<Commit> {
+        let commit = Oid::from_str(commit).unwrap();
 
-        let start = Path::new("../test-git").canonicalize().unwrap();
+        let git = self.git.clone();
 
-        let repos = tokio::task::spawn_blocking(move || {
-            let mut repos: RepositoryMetadataList = RepositoryMetadataList::new();
-            fetch_repository_metadata_impl(&start, &start, &mut repos);
-            repos
-        })
-        .await
-        .unwrap();
+        git.commits
+            .get_with(commit, async move {
+                tokio::task::spawn_blocking(move || {
+                    let repo = self.repo.lock();
 
-        let repos = Arc::new(repos);
-        self.repository_metadata.store(Some(repos.clone()));
+                    let commit = repo.find_commit(commit).unwrap();
+                    let (diff_output, diff_stats) =
+                        fetch_diff_and_stats(&repo, &commit, &self.git.syntax_set);
 
-        repos
+                    let mut commit = Commit::from(commit);
+                    commit.diff_stats = diff_stats;
+                    commit.diff = diff_output;
+
+                    Arc::new(commit)
+                })
+                .await
+                .unwrap()
+            })
+            .await
     }
 
-    pub async fn get_commits(
-        &self,
-        repo: PathBuf,
+    #[instrument(skip(self))]
+    pub async fn commits(
+        self: Arc<Self>,
         branch: Option<&str>,
         offset: usize,
     ) -> (Vec<Commit>, Option<usize>) {
-        const AMOUNT: usize = 200;
+        const LIMIT: usize = 200;
 
         let ref_name = branch.map(|branch| format!("refs/heads/{}", branch));
 
         tokio::task::spawn_blocking(move || {
-            let repo = Repository::open_bare(repo).unwrap();
+            let repo = self.repo.lock();
             let mut revs = repo.revwalk().unwrap();
 
             if let Some(ref_name) = ref_name.as_deref() {
@@ -227,7 +272,7 @@ impl Git {
 
             let mut commits: Vec<Commit> = revs
                 .skip(offset)
-                .take(AMOUNT + 1)
+                .take(LIMIT + 1)
                 .map(|rev| {
                     let rev = rev.unwrap();
                     repo.find_commit(rev).unwrap().into()
@@ -385,6 +430,7 @@ impl Commit {
     }
 }
 
+#[instrument(skip(repo, commit, syntax_set))]
 fn fetch_diff_and_stats(
     repo: &git2::Repository,
     commit: &git2::Commit<'_>,
@@ -413,6 +459,7 @@ fn fetch_diff_and_stats(
     (diff_output, diff_stats)
 }
 
+#[instrument(skip(diff, syntax_set))]
 fn format_diff(diff: &git2::Diff<'_>, syntax_set: &SyntaxSet) -> String {
     let mut diff_output = String::new();
 
@@ -462,6 +509,7 @@ fn format_diff(diff: &git2::Diff<'_>, syntax_set: &SyntaxSet) -> String {
     diff_output
 }
 
+#[instrument(skip(repos))]
 fn fetch_repository_metadata_impl(
     start: &Path,
     current: &Path,

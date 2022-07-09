@@ -110,3 +110,8 @@ pre.h2-first-line::first-line {
     background: #ffebe9;
     display: block;
 }
+
+.nested-tree {
+    color: blue !important;
+    font-weight: bold;
+}

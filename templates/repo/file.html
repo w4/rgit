@@ -1,0 +1,11 @@
+{% extends "repo/base.html" %}
+
+{% block head %}
+<link rel="stylesheet" type="text/css" href="/highlight.css" />
+{% endblock %}
+
+{% block tree_nav_class %}active{% endblock %}
+
+{% block content %}
+<pre>{{ file.content|safe }}</pre>
+{% endblock %}

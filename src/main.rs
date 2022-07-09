@@ -1,11 +1,11 @@
 #![deny(clippy::pedantic)]
 
-use axum::{
-    body::Body, handler::Handler, http::HeaderValue, response::Response, routing::get, Extension,
-    Router,
-};
+use axum::{body::Body, handler::Handler, http::HeaderValue, response::Response, routing::get, Extension, Router, http};
 use bat::assets::HighlightingAssets;
 use std::sync::Arc;
+use askama::Template;
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use syntect::html::ClassStyle;
 use tower_layer::layer_fn;
 
@@ -55,7 +55,21 @@ fn static_css(content: &'static [u8]) -> impl Handler<()> {
     move || async move {
         let mut resp = Response::new(Body::from(content));
         resp.headers_mut()
-            .insert("Content-Type", HeaderValue::from_static("text/css"));
+            .insert(http::header::CONTENT_TYPE, HeaderValue::from_static("text/css"));
         resp
+    }
+}
+
+pub fn into_response<T: Template>(t: &T) -> Response {
+    match t.render() {
+        Ok(body) => {
+            let headers = [(
+                http::header::CONTENT_TYPE,
+                HeaderValue::from_static(T::MIME_TYPE),
+            )];
+
+            (headers, body).into_response()
+        }
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }

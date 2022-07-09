@@ -9,7 +9,7 @@ use axum::{
     extract::Query,
     handler::Handler,
     http::Request,
-    response::{Html, IntoResponse, Response},
+    response::{IntoResponse, Response},
     Extension,
 };
 use path_clean::PathClean;
@@ -17,8 +17,8 @@ use serde::Deserialize;
 use tower::{util::BoxCloneService, Service};
 
 use super::filters;
-use crate::git::{DetailedTag, Refs};
-use crate::{git::Commit, layers::UnwrapInfallible, Git};
+use crate::git::{DetailedTag, FileWithContent, PathDestination, Refs, TreeItem};
+use crate::{git::Commit, layers::UnwrapInfallible, Git, into_response};
 
 #[derive(Clone)]
 pub struct Repository(pub PathBuf);
@@ -34,6 +34,9 @@ impl Deref for Repository {
 #[derive(Clone)]
 pub struct RepositoryPath(pub PathBuf);
 
+#[derive(Clone)]
+pub struct ChildPath(pub Option<PathBuf>);
+
 impl Deref for RepositoryPath {
     type Target = Path;
 
@@ -42,6 +45,7 @@ impl Deref for RepositoryPath {
     }
 }
 
+// this is some wicked, wicked abuse of axum right here...
 pub async fn service<ReqBody: Send + 'static>(mut request: Request<ReqBody>) -> Response {
     let mut uri_parts: Vec<&str> = request
         .uri()
@@ -50,6 +54,8 @@ pub async fn service<ReqBody: Send + 'static>(mut request: Request<ReqBody>) -> 
         .trim_end_matches('/')
         .split('/')
         .collect();
+
+    let mut child_path = None;
 
     let mut service = match uri_parts.pop() {
         Some("about") => BoxCloneService::new(handle_about.into_service()),
@@ -61,7 +67,30 @@ pub async fn service<ReqBody: Send + 'static>(mut request: Request<ReqBody>) -> 
         Some("tag") => BoxCloneService::new(handle_tag.into_service()),
         Some(v) => {
             uri_parts.push(v);
-            BoxCloneService::new(handle_summary.into_service())
+
+            // match tree children
+            if uri_parts.iter().any(|v| *v == "tree") {
+                // TODO: this needs fixing up so it doesn't accidentally match repos that have
+                //  `tree` in their path
+                let mut reconstructed_path = Vec::new();
+
+                while let Some(part) = uri_parts.pop() {
+                    if part == "tree" {
+                        break;
+                    }
+
+                    // TODO: FIXME
+                    reconstructed_path.insert(0, part);
+                }
+
+                child_path = Some(reconstructed_path.into_iter().collect::<PathBuf>().clean());
+
+                eprintln!("repo path: {:?}", child_path);
+
+                BoxCloneService::new(handle_tree.into_service())
+            } else {
+                BoxCloneService::new(handle_summary.into_service())
+            }
         }
         None => panic!("not found"),
     };
@@ -69,6 +98,7 @@ pub async fn service<ReqBody: Send + 'static>(mut request: Request<ReqBody>) -> 
     let uri = uri_parts.into_iter().collect::<PathBuf>().clean();
     let path = Path::new("../test-git").canonicalize().unwrap().join(&uri);
 
+    request.extensions_mut().insert(ChildPath(child_path));
     request.extensions_mut().insert(Repository(uri));
     request.extensions_mut().insert(RepositoryPath(path));
 
@@ -79,15 +109,15 @@ pub async fn service<ReqBody: Send + 'static>(mut request: Request<ReqBody>) -> 
         .into_response()
 }
 
-#[allow(clippy::unused_async)]
-pub async fn handle_summary(Extension(repo): Extension<Repository>) -> Html<String> {
-    #[derive(Template)]
-    #[template(path = "repo/summary.html")]
-    pub struct View {
-        repo: Repository,
-    }
+#[derive(Template)]
+#[template(path = "repo/summary.html")]
+pub struct SummaryView {
+    pub repo: Repository,
+}
 
-    Html(View { repo }.render().unwrap())
+#[allow(clippy::unused_async)]
+pub async fn handle_summary(Extension(repo): Extension<Repository>) -> Response {
+    into_response(&SummaryView { repo })
 }
 
 #[derive(Deserialize)]
@@ -96,23 +126,23 @@ pub struct TagQuery {
     name: String,
 }
 
+#[derive(Template)]
+#[template(path = "repo/tag.html")]
+pub struct TagView {
+    repo: Repository,
+    tag: DetailedTag,
+}
+
 pub async fn handle_tag(
     Extension(repo): Extension<Repository>,
     Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
     Extension(git): Extension<Arc<Git>>,
     Query(query): Query<TagQuery>,
-) -> Html<String> {
-    #[derive(Template)]
-    #[template(path = "repo/tag.html")]
-    pub struct View {
-        repo: Repository,
-        tag: DetailedTag,
-    }
-
+) -> Response {
     let open_repo = git.repo(repository_path).await;
     let tag = open_repo.tag_info(&query.name).await;
 
-    Html(View { repo, tag }.render().unwrap())
+    into_response(&TagView { repo, tag })
 }
 
 #[derive(Deserialize)]
@@ -123,75 +153,75 @@ pub struct LogQuery {
     branch: Option<String>,
 }
 
-#[allow(clippy::unused_async)]
+#[derive(Template)]
+#[template(path = "repo/log.html")]
+pub struct LogView {
+    repo: Repository,
+    commits: Vec<Commit>,
+    next_offset: Option<usize>,
+    branch: Option<String>,
+}
+
 pub async fn handle_log(
     Extension(repo): Extension<Repository>,
     Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
     Extension(git): Extension<Arc<Git>>,
     Query(query): Query<LogQuery>,
-) -> Html<String> {
-    #[derive(Template)]
-    #[template(path = "repo/log.html")]
-    pub struct View {
-        repo: Repository,
-        commits: Vec<Commit>,
-        next_offset: Option<usize>,
-        branch: Option<String>,
-    }
-
+) -> Response {
     let open_repo = git.repo(repository_path).await;
     let (commits, next_offset) = open_repo
         .commits(query.branch.as_deref(), query.offset.unwrap_or(0))
         .await;
 
-    Html(
-        View {
-            repo,
-            commits,
-            next_offset,
-            branch: query.branch,
-        }
-        .render()
-        .unwrap(),
-    )
+    into_response(&LogView {
+        repo,
+        commits,
+        next_offset,
+        branch: query.branch,
+    })
 }
 
-#[allow(clippy::unused_async)]
+#[derive(Template)]
+#[template(path = "repo/refs.html")]
+pub struct RefsView {
+    repo: Repository,
+    refs: Arc<Refs>,
+}
+
 pub async fn handle_refs(
     Extension(repo): Extension<Repository>,
     Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
     Extension(git): Extension<Arc<Git>>,
-) -> Html<String> {
-    #[derive(Template)]
-    #[template(path = "repo/refs.html")]
-    pub struct View {
-        repo: Repository,
-        refs: Arc<Refs>,
-    }
-
+) -> Response {
     let open_repo = git.repo(repository_path).await;
     let refs = open_repo.refs().await;
 
-    Html(View { repo, refs }.render().unwrap())
+    into_response(&RefsView { repo, refs })
 }
 
-#[allow(clippy::unused_async)]
+#[derive(Template)]
+#[template(path = "repo/about.html")]
+pub struct AboutView {
+    repo: Repository,
+    readme: Option<Arc<str>>,
+}
+
 pub async fn handle_about(
     Extension(repo): Extension<Repository>,
     Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
     Extension(git): Extension<Arc<Git>>,
-) -> Html<String> {
-    #[derive(Template)]
-    #[template(path = "repo/about.html")]
-    pub struct View {
-        repo: Repository,
-        readme: Option<Arc<str>>,
-    }
-
+) -> Response {
     let open_repo = git.clone().repo(repository_path).await;
     let readme = open_repo.readme().await;
 
-    Html(View { repo, readme }.render().unwrap())
+    into_response(&AboutView { repo, readme })
+}
+
+#[derive(Template)]
+#[template(path = "repo/commit.html")]
+pub struct CommitView {
+    pub repo: Repository,
+    pub commit: Arc<Commit>,
 }
 
 #[derive(Deserialize)]
@@ -199,20 +229,12 @@ pub struct CommitQuery {
     id: Option<String>,
 }
 
-#[allow(clippy::unused_async)]
 pub async fn handle_commit(
     Extension(repo): Extension<Repository>,
     Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
     Extension(git): Extension<Arc<Git>>,
     Query(query): Query<CommitQuery>,
-) -> Html<String> {
-    #[derive(Template)]
-    #[template(path = "repo/commit.html")]
-    pub struct View {
-        pub repo: Repository,
-        pub commit: Arc<Commit>,
-    }
-
+) -> Response {
     let open_repo = git.repo(repository_path).await;
     let commit = if let Some(commit) = query.id {
         open_repo.commit(&commit).await
@@ -220,34 +242,50 @@ pub async fn handle_commit(
         Arc::new(open_repo.latest_commit().await)
     };
 
-    Html(View { repo, commit }.render().unwrap())
+    into_response(&CommitView { repo, commit })
 }
 
-#[allow(clippy::unused_async)]
-pub async fn handle_tree(Extension(repo): Extension<Repository>) -> Html<String> {
+pub async fn handle_tree(
+    Extension(repo): Extension<Repository>,
+    Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
+    Extension(ChildPath(child_path)): Extension<ChildPath>,
+    Extension(git): Extension<Arc<Git>>,
+) -> Response {
     #[derive(Template)]
     #[template(path = "repo/tree.html")]
-    pub struct View {
+    pub struct TreeView {
         pub repo: Repository,
+        pub items: Vec<TreeItem>,
     }
 
-    Html(View { repo }.render().unwrap())
+    #[derive(Template)]
+    #[template(path = "repo/file.html")]
+    pub struct FileView {
+        pub repo: Repository,
+        pub file: FileWithContent,
+    }
+
+    let open_repo = git.repo(repository_path).await;
+
+    match open_repo.path(child_path).await {
+        PathDestination::Tree(items) => into_response(&TreeView { repo, items }),
+        PathDestination::File(file) => into_response(&FileView { repo, file }),
+    }
 }
 
-#[allow(clippy::unused_async)]
+#[derive(Template)]
+#[template(path = "repo/diff.html")]
+pub struct DiffView {
+    pub repo: Repository,
+    pub commit: Arc<Commit>,
+}
+
 pub async fn handle_diff(
     Extension(repo): Extension<Repository>,
     Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
     Extension(git): Extension<Arc<Git>>,
     Query(query): Query<CommitQuery>,
-) -> Html<String> {
-    #[derive(Template)]
-    #[template(path = "repo/diff.html")]
-    pub struct View {
-        pub repo: Repository,
-        pub commit: Arc<Commit>,
-    }
-
+) -> Response {
     let open_repo = git.repo(repository_path).await;
     let commit = if let Some(commit) = query.id {
         open_repo.commit(&commit).await
@@ -255,5 +293,5 @@ pub async fn handle_diff(
         Arc::new(open_repo.latest_commit().await)
     };
 
-    Html(View { repo, commit }.render().unwrap())
+    into_response(&DiffView { repo, commit })
 }

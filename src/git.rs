@@ -14,6 +14,7 @@ use moka::future::Cache;
 use parking_lot::Mutex;
 use syntect::html::{ClassStyle, ClassedHTMLGenerator};
 use syntect::parsing::SyntaxSet;
+use syntect::util::LinesWithEndings;
 use time::OffsetDateTime;
 use tracing::instrument;
 
@@ -96,6 +97,73 @@ pub struct OpenRepository {
 }
 
 impl OpenRepository {
+    pub async fn path(self: Arc<Self>, path: Option<PathBuf>) -> PathDestination {
+        tokio::task::spawn_blocking(move || {
+            let repo = self.repo.lock();
+
+            let head = repo.head().unwrap();
+            let mut tree = head.peel_to_tree().unwrap();
+
+            if let Some(path) = path.as_ref() {
+                let item = tree.get_path(&path).unwrap();
+                let object = item.to_object(&repo).unwrap();
+
+                if let Some(blob) = object.as_blob() {
+                    let name = item.name().unwrap().to_string();
+                    let path = path.clone().join(&name);
+
+                    let extension = path.extension()
+                        .or(path.file_name())
+                        .unwrap()
+                        .to_string_lossy();
+                    let content = format_file(blob.content(), &extension, &self.git.syntax_set);
+
+                    return PathDestination::File(FileWithContent {
+                        metadata: File {
+                            mode: item.filemode(),
+                            size: blob.size(),
+                            path,
+                            name,
+                        },
+                        content,
+                    });
+                } else if let Ok(new_tree) = object.into_tree() {
+                    tree = new_tree;
+                } else {
+                    panic!("unknown item kind");
+                }
+            }
+
+            let mut tree_items = Vec::new();
+
+            for item in tree.iter() {
+                let object = item.to_object(&repo).unwrap();
+
+                let name = item.name().unwrap().to_string();
+                let path = path.clone().unwrap_or_default().join(&name);
+
+                if let Some(blob) = object.as_blob() {
+                    tree_items.push(TreeItem::File(File {
+                        mode: item.filemode(),
+                        size: blob.size(),
+                        path,
+                        name,
+                    }));
+                } else if let Some(_tree) = object.as_tree() {
+                    tree_items.push(TreeItem::Tree(Tree {
+                        mode: item.filemode(),
+                        path,
+                        name,
+                    }));
+                }
+            }
+
+            PathDestination::Tree(tree_items)
+        })
+        .await
+        .unwrap()
+    }
+
     #[instrument(skip(self))]
     pub async fn tag_info(self: Arc<Self>, tag_name: &str) -> DetailedTag {
         let reference = format!("refs/tags/{tag_name}");
@@ -289,6 +357,37 @@ impl OpenRepository {
     }
 }
 
+pub enum PathDestination {
+    Tree(Vec<TreeItem>),
+    File(FileWithContent),
+}
+
+pub enum TreeItem {
+    Tree(Tree),
+    File(File),
+}
+
+#[derive(Debug)]
+pub struct Tree {
+    pub mode: i32,
+    pub name: String,
+    pub path: PathBuf,
+}
+
+#[derive(Debug)]
+pub struct File {
+    pub mode: i32,
+    pub size: usize,
+    pub name: String,
+    pub path: PathBuf,
+}
+
+#[derive(Debug)]
+pub struct FileWithContent {
+    pub metadata: File,
+    pub content: String,
+}
+
 #[derive(Debug, Default)]
 pub struct Refs {
     pub branch: Vec<Branch>,
@@ -457,6 +556,24 @@ fn fetch_diff_and_stats(
     let diff_output = format_diff(&diff, &syntax_set);
 
     (diff_output, diff_stats)
+}
+
+fn format_file(content: &[u8], extension: &str, syntax_set: &SyntaxSet) -> String {
+    let content = std::str::from_utf8(content).unwrap();
+
+    let syntax = syntax_set
+        .find_syntax_by_extension(&extension)
+        .unwrap_or(syntax_set.find_syntax_plain_text());
+    let mut html_generator =
+        ClassedHTMLGenerator::new_with_class_style(syntax, &syntax_set, ClassStyle::Spaced);
+
+    for line in LinesWithEndings::from(content) {
+        html_generator
+            .parse_html_for_line_which_includes_newline(line)
+            .unwrap();
+    }
+
+    html_generator.finalize()
 }
 
 #[instrument(skip(diff, syntax_set))]

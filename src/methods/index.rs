@@ -1,24 +1,21 @@
 use askama::Template;
-use axum::response::Html;
+use axum::response::Response;
 use axum::Extension;
 use std::sync::Arc;
 
 use super::filters;
-use crate::{git::RepositoryMetadataList, Git};
+use crate::{git::RepositoryMetadataList, Git, into_response};
 
-#[allow(clippy::unused_async)]
-pub async fn handle(Extension(git): Extension<Arc<Git>>) -> Html<String> {
-    #[derive(Template)]
-    #[template(path = "index.html")]
-    pub struct View {
-        pub repositories: Arc<RepositoryMetadataList>,
-    }
+#[derive(Template)]
+#[template(path = "index.html")]
+pub struct View {
+    pub repositories: Arc<RepositoryMetadataList>,
+}
 
-    Html(
-        View {
-            repositories: git.fetch_repository_metadata().await,
-        }
-        .render()
-        .unwrap(),
-    )
+pub async fn handle(Extension(git): Extension<Arc<Git>>) -> Response {
+    let repositories = git.fetch_repository_metadata().await;
+
+    into_response(&View {
+        repositories,
+    })
 }

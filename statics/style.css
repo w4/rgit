@@ -25,6 +25,10 @@ a {
     color: blue;
 }
 
+a.no-style {
+    color: inherit;
+}
+
 a:hover {
     text-decoration: underline;
 }

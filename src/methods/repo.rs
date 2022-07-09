@@ -245,11 +245,17 @@ pub async fn handle_commit(
     into_response(&CommitView { repo, commit })
 }
 
+#[derive(Deserialize)]
+pub struct TreeQuery {
+    id: Option<String>,
+}
+
 pub async fn handle_tree(
     Extension(repo): Extension<Repository>,
     Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
     Extension(ChildPath(child_path)): Extension<ChildPath>,
     Extension(git): Extension<Arc<Git>>,
+    Query(query): Query<TreeQuery>,
 ) -> Response {
     #[derive(Template)]
     #[template(path = "repo/tree.html")]
@@ -267,7 +273,7 @@ pub async fn handle_tree(
 
     let open_repo = git.repo(repository_path).await;
 
-    match open_repo.path(child_path).await {
+    match open_repo.path(child_path, query.id).await {
         PathDestination::Tree(items) => into_response(&TreeView { repo, items }),
         PathDestination::File(file) => into_response(&FileView { repo, file }),
     }

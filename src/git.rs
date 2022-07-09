@@ -97,12 +97,14 @@ pub struct OpenRepository {
 }
 
 impl OpenRepository {
-    pub async fn path(self: Arc<Self>, path: Option<PathBuf>, tree_id: Option<String>) -> PathDestination {
+    pub async fn path(self: Arc<Self>, path: Option<PathBuf>, tree_id: Option<&str>) -> PathDestination {
+        let tree_id = tree_id.map(Oid::from_str).transpose().unwrap();
+
         tokio::task::spawn_blocking(move || {
             let repo = self.repo.lock();
 
             let mut tree = if let Some(tree_id) = tree_id {
-                repo.find_tree(Oid::from_str(&tree_id).unwrap()).unwrap()
+                repo.find_tree(tree_id).unwrap()
             } else {
                 let head = repo.head().unwrap();
                 head.peel_to_tree().unwrap()

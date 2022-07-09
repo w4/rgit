@@ -18,12 +18,12 @@
         {% match item %}
             {% when crate::git::TreeItem::Tree with (tree) %}
                 <td><pre>{{ tree.mode|file_perms }}</pre></td>
-                <td><pre><a class="nested-tree" href="/{{ repo.display() }}/tree/{{ tree.path.display() }}">{{ tree.name }}</a></pre></td>
+                <td><pre><a class="nested-tree" href="/{{ repo.display() }}/tree/{{ tree.path.display() }}{{ query }}">{{ tree.name }}</a></pre></td>
                 <td></td>
                 <td></td>
             {% when crate::git::TreeItem::File with (file) %}
                 <td><pre>{{ file.mode|file_perms }}</pre></td>
-                <td><pre><a href="/{{ repo.display() }}/tree/{{ file.path.display() }}">{{ file.name }}</a></pre></td>
+                <td><pre><a href="/{{ repo.display() }}/tree/{{ file.path.display() }}{{ query }}">{{ file.name }}</a></pre></td>
                 <td><pre>{{ file.size }}</pre></td>
                 <td></td>
         {% endmatch %}

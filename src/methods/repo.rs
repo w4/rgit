@@ -3,6 +3,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+use std::fmt::{Display, Formatter};
 
 use askama::Template;
 use axum::{
@@ -250,6 +251,16 @@ pub struct TreeQuery {
     id: Option<String>,
 }
 
+impl Display for TreeQuery {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if let Some(id) = self.id.as_deref() {
+            write!(f, "?id={}", id)?;
+        }
+
+        Ok(())
+    }
+}
+
 pub async fn handle_tree(
     Extension(repo): Extension<Repository>,
     Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
@@ -262,6 +273,7 @@ pub async fn handle_tree(
     pub struct TreeView {
         pub repo: Repository,
         pub items: Vec<TreeItem>,
+        pub query: TreeQuery,
     }
 
     #[derive(Template)]
@@ -273,8 +285,8 @@ pub async fn handle_tree(
 
     let open_repo = git.repo(repository_path).await;
 
-    match open_repo.path(child_path, query.id).await {
-        PathDestination::Tree(items) => into_response(&TreeView { repo, items }),
+    match open_repo.path(child_path, query.id.as_deref()).await {
+        PathDestination::Tree(items) => into_response(&TreeView { repo, items, query }),
         PathDestination::File(file) => into_response(&FileView { repo, file }),
     }
 }

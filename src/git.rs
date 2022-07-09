@@ -7,9 +7,7 @@ use std::{
 };
 
 use arc_swap::ArcSwapOption;
-use git2::{
-    DiffFormat, DiffLineType, DiffOptions, DiffStatsFormat, ObjectType, Oid, Repository, Signature,
-};
+use git2::{BranchType, DiffFormat, DiffLineType, DiffOptions, DiffStatsFormat, ObjectType, Oid, Repository, Signature};
 use moka::future::Cache;
 use parking_lot::Mutex;
 use syntect::html::{ClassStyle, ClassedHTMLGenerator};
@@ -97,7 +95,7 @@ pub struct OpenRepository {
 }
 
 impl OpenRepository {
-    pub async fn path(self: Arc<Self>, path: Option<PathBuf>, tree_id: Option<&str>) -> PathDestination {
+    pub async fn path(self: Arc<Self>, path: Option<PathBuf>, tree_id: Option<&str>, branch: Option<String>) -> PathDestination {
         let tree_id = tree_id.map(Oid::from_str).transpose().unwrap();
 
         tokio::task::spawn_blocking(move || {
@@ -105,6 +103,9 @@ impl OpenRepository {
 
             let mut tree = if let Some(tree_id) = tree_id {
                 repo.find_tree(tree_id).unwrap()
+            } else if let Some(branch) = branch {
+                let branch = repo.find_branch(&branch, BranchType::Local).unwrap();
+                branch.get().peel_to_tree().unwrap()
             } else {
                 let head = repo.head().unwrap();
                 head.peel_to_tree().unwrap()

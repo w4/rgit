@@ -249,12 +249,21 @@ pub async fn handle_commit(
 #[derive(Deserialize)]
 pub struct TreeQuery {
     id: Option<String>,
+    #[serde(rename = "h")]
+    branch: Option<String>,
 }
 
 impl Display for TreeQuery {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut prefix = "?";
+
         if let Some(id) = self.id.as_deref() {
-            write!(f, "?id={}", id)?;
+            write!(f, "{}id={}", prefix, id)?;
+            prefix = "&";
+        }
+
+        if let Some(branch) = self.branch.as_deref() {
+            write!(f, "{}h={}", prefix, branch)?;
         }
 
         Ok(())
@@ -285,7 +294,7 @@ pub async fn handle_tree(
 
     let open_repo = git.repo(repository_path).await;
 
-    match open_repo.path(child_path, query.id.as_deref()).await {
+    match open_repo.path(child_path, query.id.as_deref(), query.branch.clone()).await {
         PathDestination::Tree(items) => into_response(&TreeView { repo, items, query }),
         PathDestination::File(file) => into_response(&FileView { repo, file }),
     }

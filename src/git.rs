@@ -1,16 +1,7 @@
-use std::{
-    borrow::Cow,
-    collections::BTreeMap,
-    fmt::Write,
-    path::{Path, PathBuf},
-    sync::Arc,
-    time::Duration,
-};
+use std::{borrow::Cow, fmt::Write, path::PathBuf, sync::Arc, time::Duration};
 
-use arc_swap::ArcSwapOption;
 use git2::{
-    BranchType, DiffFormat, DiffLineType, DiffOptions, DiffStatsFormat, ObjectType, Oid,
-    Repository, Signature,
+    BranchType, DiffFormat, DiffLineType, DiffOptions, DiffStatsFormat, ObjectType, Oid, Signature,
 };
 use moka::future::Cache;
 use parking_lot::Mutex;
@@ -20,13 +11,10 @@ use syntect::util::LinesWithEndings;
 use time::OffsetDateTime;
 use tracing::instrument;
 
-pub type RepositoryMetadataList = BTreeMap<Option<String>, Vec<RepositoryMetadata>>;
-
 pub struct Git {
     commits: Cache<Oid, Arc<Commit>>,
     readme_cache: Cache<PathBuf, Option<Arc<str>>>,
     refs: Cache<PathBuf, Arc<Refs>>,
-    repository_metadata: ArcSwapOption<RepositoryMetadataList>,
     syntax_set: SyntaxSet,
 }
 
@@ -46,7 +34,6 @@ impl Git {
                 .time_to_live(Duration::from_secs(10))
                 .max_capacity(100)
                 .build(),
-            repository_metadata: ArcSwapOption::default(),
             syntax_set,
         }
     }
@@ -67,28 +54,6 @@ impl Git {
             cache_key: repo_path,
             repo: Mutex::new(repo),
         })
-    }
-
-    #[instrument(skip(self))]
-    pub async fn fetch_repository_metadata(&self) -> Arc<RepositoryMetadataList> {
-        if let Some(metadata) = self.repository_metadata.load().as_ref() {
-            return Arc::clone(metadata);
-        }
-
-        let start = Path::new("../test-git").canonicalize().unwrap();
-
-        let repos = tokio::task::spawn_blocking(move || {
-            let mut repos: RepositoryMetadataList = RepositoryMetadataList::new();
-            fetch_repository_metadata_impl(&start, &start, &mut repos);
-            repos
-        })
-        .await
-        .unwrap();
-
-        let repos = Arc::new(repos);
-        self.repository_metadata.store(Some(repos.clone()));
-
-        repos
     }
 }
 
@@ -448,14 +413,6 @@ pub struct Tag {
 }
 
 #[derive(Debug)]
-pub struct RepositoryMetadata {
-    pub name: String,
-    pub description: Option<Cow<'static, str>>,
-    pub owner: Option<String>,
-    pub last_modified: OffsetDateTime,
-}
-
-#[derive(Debug)]
 pub struct CommitUser {
     name: String,
     email: String,
@@ -648,55 +605,4 @@ fn format_diff(diff: &git2::Diff<'_>, syntax_set: &SyntaxSet) -> String {
     .unwrap();
 
     diff_output
-}
-
-#[instrument(skip(repos))]
-fn fetch_repository_metadata_impl(
-    start: &Path,
-    current: &Path,
-    repos: &mut RepositoryMetadataList,
-) {
-    let dirs = std::fs::read_dir(current)
-        .unwrap()
-        .map(|v| v.unwrap().path())
-        .filter(|path| path.is_dir());
-
-    for dir in dirs {
-        let repository = match Repository::open_bare(&dir) {
-            Ok(v) => v,
-            Err(_e) => {
-                fetch_repository_metadata_impl(start, &dir, repos);
-                continue;
-            }
-        };
-
-        let repo_path = Some(
-            current
-                .strip_prefix(start)
-                .unwrap()
-                .to_string_lossy()
-                .into_owned(),
-        )
-        .filter(|v| !v.is_empty());
-        let repos = repos.entry(repo_path).or_default();
-
-        let description = std::fs::read_to_string(dir.join("description"))
-            .map(Cow::Owned)
-            .ok();
-        let last_modified = std::fs::metadata(&dir).unwrap().modified().unwrap();
-        let owner = repository.config().unwrap().get_string("gitweb.owner").ok();
-
-        repos.push(RepositoryMetadata {
-            name: dir
-                .components()
-                .last()
-                .unwrap()
-                .as_os_str()
-                .to_string_lossy()
-                .into_owned(),
-            description,
-            owner,
-            last_modified: OffsetDateTime::from(last_modified),
-        });
-    }
 }

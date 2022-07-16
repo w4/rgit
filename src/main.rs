@@ -14,6 +14,7 @@ use tower_layer::layer_fn;
 
 use crate::{git::Git, layers::logger::LoggingMiddleware};
 
+mod database;
 mod git;
 mod layers;
 mod methods;
@@ -26,6 +27,17 @@ async fn main() {
     #[cfg(debug_assertions)]
     let subscriber = subscriber.pretty();
     subscriber.init();
+
+    let db = sled::open("/tmp/some-sled.db").unwrap();
+
+    std::thread::spawn({
+        let db = db.clone();
+
+        move || {
+            crate::database::indexer::run_indexer(&db);
+            eprintln!("finished indexer");
+        }
+    });
 
     let bat_assets = HighlightingAssets::from_binary();
     let syntax_set = bat_assets.get_syntax_set().unwrap().clone();
@@ -49,7 +61,8 @@ async fn main() {
         .route("/highlight.css", get(static_css(css)))
         .fallback(methods::repo::service.into_service())
         .layer(layer_fn(LoggingMiddleware))
-        .layer(Extension(Arc::new(Git::new(syntax_set))));
+        .layer(Extension(Arc::new(Git::new(syntax_set))))
+        .layer(Extension(db));
 
     axum::Server::bind(&"127.0.0.1:3333".parse().unwrap())
         .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())

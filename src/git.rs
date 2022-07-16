@@ -365,7 +365,12 @@ impl OpenRepository {
                 .collect();
 
             // TODO: avoid having to take + 1 and popping the last commit off
-            let next_offset = commits.pop().is_some().then(|| offset + commits.len());
+            let next_offset = if commits.len() > LIMIT {
+                commits.truncate(LIMIT);
+                Some(offset + LIMIT)
+            } else {
+                None
+            };
 
             (commits, next_offset)
         })

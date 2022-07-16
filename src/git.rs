@@ -4,6 +4,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
+    fmt::Write,
 };
 
 use arc_swap::ArcSwapOption;
@@ -580,7 +581,7 @@ fn format_file(content: &[u8], extension: &str, syntax_set: &SyntaxSet) -> Strin
             .unwrap();
     }
 
-    html_generator.finalize()
+    format!("<code>{}</code>", html_generator.finalize().replace('\n', "</code>\n<code>"))
 }
 
 #[instrument(skip(diff, syntax_set))]
@@ -588,14 +589,14 @@ fn format_diff(diff: &git2::Diff<'_>, syntax_set: &SyntaxSet) -> String {
     let mut diff_output = String::new();
 
     diff.print(DiffFormat::Patch, |delta, _diff_hunk, diff_line| {
-        let (class, prefix, should_highlight_as_source) = match diff_line.origin_value() {
-            DiffLineType::Addition => (Some("add-line"), "+", true),
-            DiffLineType::Deletion => (Some("remove-line"), "-", true),
-            DiffLineType::Context => (None, " ", true),
-            DiffLineType::AddEOFNL => (Some("remove-line"), "", false),
-            DiffLineType::DeleteEOFNL => (Some("add-line"), "", false),
-            DiffLineType::FileHeader => (Some("file-header"), "", false),
-            _ => (None, "", false),
+        let (class, should_highlight_as_source) = match diff_line.origin_value() {
+            DiffLineType::Addition => (Some("add-line"), true),
+            DiffLineType::Deletion => (Some("remove-line"), true),
+            DiffLineType::Context => (Some("context"), true),
+            DiffLineType::AddEOFNL => (Some("remove-line"), false),
+            DiffLineType::DeleteEOFNL => (Some("add-line"), false),
+            DiffLineType::FileHeader => (Some("file-header"), false),
+            _ => (None, false),
         };
 
         let line = std::str::from_utf8(diff_line.content()).unwrap();
@@ -618,9 +619,8 @@ fn format_diff(diff: &git2::Diff<'_>, syntax_set: &SyntaxSet) -> String {
             .parse_html_for_line_which_includes_newline(line)
             .unwrap();
         if let Some(class) = class {
-            diff_output.push_str(&format!("<span class=\"diff-{class}\">"));
+            write!(diff_output, r#"<span class="diff-{class}">"#).unwrap();
         }
-        diff_output.push_str(prefix);
         diff_output.push_str(&html_generator.finalize());
         if class.is_some() {
             diff_output.push_str("</span>");

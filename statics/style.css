@@ -96,6 +96,27 @@ pre.h2-first-line::first-line {
     font-weight: bold;
 }
 
+pre {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    overflow: auto;
+    counter-reset: line;
+}
+
+code {
+    counter-increment: line;
+}
+
+code::before {
+    content: counter(line);
+    display: inline-block;
+    width: 2em;
+    padding: 0 1em 0.3em 0;
+    margin-right: .5em;
+    color: #888;
+    -webkit-user-select: none;
+}
 
 .diff-file-header {
     font-weight: bold;
@@ -105,14 +126,32 @@ pre.h2-first-line::first-line {
     font-weight: normal;
 }
 
+.diff-add-line::before, .diff-remove-line::before, .diff-context::before {
+    display: inline-block;
+    color: #888;
+    -webkit-user-select: none;
+}
+
 .diff-add-line {
     background: #e6ffec;
     display: block;
 }
 
+.diff-add-line::before {
+    content: '+ ';
+}
+
 .diff-remove-line {
     background: #ffebe9;
     display: block;
+}
+
+.diff-remove-line::before {
+    content: '- ';
+}
+
+.diff-context::before {
+    content: '  ';
 }
 
 .nested-tree {

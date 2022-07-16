@@ -1,11 +1,14 @@
 #![deny(clippy::pedantic)]
 
-use axum::{body::Body, handler::Handler, http::HeaderValue, response::Response, routing::get, Extension, Router, http};
-use bat::assets::HighlightingAssets;
-use std::sync::Arc;
 use askama::Template;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
+use axum::{
+    body::Body, handler::Handler, http, http::HeaderValue, response::Response, routing::get,
+    Extension, Router,
+};
+use bat::assets::HighlightingAssets;
+use std::sync::Arc;
 use syntect::html::ClassStyle;
 use tower_layer::layer_fn;
 
@@ -38,7 +41,10 @@ async fn main() {
         .route("/", get(methods::index::handle))
         .route(
             "/style.css",
-            get(static_css(include_bytes!("../statics/style.css"))),
+            get(static_css(include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/statics/css/style.css"
+            )))),
         )
         .route("/highlight.css", get(static_css(css)))
         .fallback(methods::repo::service.into_service())
@@ -54,8 +60,10 @@ async fn main() {
 fn static_css(content: &'static [u8]) -> impl Handler<()> {
     move || async move {
         let mut resp = Response::new(Body::from(content));
-        resp.headers_mut()
-            .insert(http::header::CONTENT_TYPE, HeaderValue::from_static("text/css"));
+        resp.headers_mut().insert(
+            http::header::CONTENT_TYPE,
+            HeaderValue::from_static("text/css"),
+        );
         resp
     }
 }

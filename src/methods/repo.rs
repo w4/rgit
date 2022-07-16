@@ -1,9 +1,9 @@
+use std::fmt::{Display, Formatter};
 use std::{
     ops::Deref,
     path::{Path, PathBuf},
     sync::Arc,
 };
-use std::fmt::{Display, Formatter};
 
 use askama::Template;
 use axum::{
@@ -19,7 +19,7 @@ use tower::{util::BoxCloneService, Service};
 
 use super::filters;
 use crate::git::{DetailedTag, FileWithContent, PathDestination, Refs, TreeItem};
-use crate::{git::Commit, layers::UnwrapInfallible, Git, into_response};
+use crate::{git::Commit, into_response, layers::UnwrapInfallible, Git};
 
 #[derive(Clone)]
 pub struct Repository(pub PathBuf);
@@ -294,7 +294,10 @@ pub async fn handle_tree(
 
     let open_repo = git.repo(repository_path).await;
 
-    match open_repo.path(child_path, query.id.as_deref(), query.branch.clone()).await {
+    match open_repo
+        .path(child_path, query.id.as_deref(), query.branch.clone())
+        .await
+    {
         PathDestination::Tree(items) => into_response(&TreeView { repo, items, query }),
         PathDestination::File(file) => into_response(&FileView { repo, file }),
     }

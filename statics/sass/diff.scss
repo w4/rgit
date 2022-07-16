@@ -1,0 +1,37 @@
+.diff-add-line::before, .diff-remove-line::before, .diff-context::before {
+  display: inline-block;
+  color: #888;
+  -webkit-user-select: none;
+}
+
+.diff-file-header {
+  font-weight: bold;
+}
+
+.diff-file-header > span > span {
+  font-weight: normal;
+}
+
+.diff-add-line {
+  background: #e6ffec;
+  display: block;
+
+  &::before {
+    content: '+ ';
+  }
+}
+
+.diff-remove-line {
+  background: #ffebe9;
+  display: block;
+
+  &::before {
+    content: '- ';
+  }
+}
+
+.diff-context {
+  &::before {
+    content: '  ';
+  }
+}

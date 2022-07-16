@@ -1,0 +1,56 @@
+table {
+  border-collapse: collapse;
+
+  th {
+    text-align: left;
+  }
+}
+
+table.repositories {
+  width: 100%;
+
+  a {
+    color: black;
+
+    &:hover {
+      color: #00f;
+    }
+  }
+
+  tbody {
+    tr {
+      &:nth-child(odd) {
+        background: #f7f7f7;
+      }
+
+      &.has-parent td:first-of-type {
+        padding-left: 1rem;
+      }
+
+      td.repo-section {
+        font-style: italic;
+        color: #888;
+      }
+
+      &.separator {
+        background: white !important;
+        height: 1rem;
+      }
+    }
+
+    pre {
+      margin: 0;
+    }
+  }
+
+  .nested-tree {
+    color: blue !important;
+    font-weight: bold;
+  }
+}
+
+table.commit-info {
+  td, th {
+    padding: 0.1em 1em 0.1em 0.1em;
+  }
+}

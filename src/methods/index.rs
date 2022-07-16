@@ -4,7 +4,7 @@ use axum::Extension;
 use std::sync::Arc;
 
 use super::filters;
-use crate::{git::RepositoryMetadataList, Git, into_response};
+use crate::{git::RepositoryMetadataList, into_response, Git};
 
 #[derive(Template)]
 #[template(path = "index.html")]
@@ -15,7 +15,5 @@ pub struct View {
 pub async fn handle(Extension(git): Extension<Arc<Git>>) -> Response {
     let repositories = git.fetch_repository_metadata().await;
 
-    into_response(&View {
-        repositories,
-    })
+    into_response(&View { repositories })
 }

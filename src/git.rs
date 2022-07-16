@@ -1,14 +1,17 @@
 use std::{
     borrow::Cow,
     collections::BTreeMap,
+    fmt::Write,
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
-    fmt::Write,
 };
 
 use arc_swap::ArcSwapOption;
-use git2::{BranchType, DiffFormat, DiffLineType, DiffOptions, DiffStatsFormat, ObjectType, Oid, Repository, Signature};
+use git2::{
+    BranchType, DiffFormat, DiffLineType, DiffOptions, DiffStatsFormat, ObjectType, Oid,
+    Repository, Signature,
+};
 use moka::future::Cache;
 use parking_lot::Mutex;
 use syntect::html::{ClassStyle, ClassedHTMLGenerator};
@@ -96,7 +99,12 @@ pub struct OpenRepository {
 }
 
 impl OpenRepository {
-    pub async fn path(self: Arc<Self>, path: Option<PathBuf>, tree_id: Option<&str>, branch: Option<String>) -> PathDestination {
+    pub async fn path(
+        self: Arc<Self>,
+        path: Option<PathBuf>,
+        tree_id: Option<&str>,
+        branch: Option<String>,
+    ) -> PathDestination {
         let tree_id = tree_id.map(Oid::from_str).transpose().unwrap();
 
         tokio::task::spawn_blocking(move || {
@@ -120,7 +128,8 @@ impl OpenRepository {
                     let name = item.name().unwrap().to_string();
                     let path = path.clone().join(&name);
 
-                    let extension = path.extension()
+                    let extension = path
+                        .extension()
                         .or(path.file_name())
                         .unwrap()
                         .to_string_lossy();
@@ -581,7 +590,10 @@ fn format_file(content: &[u8], extension: &str, syntax_set: &SyntaxSet) -> Strin
             .unwrap();
     }
 
-    format!("<code>{}</code>", html_generator.finalize().replace('\n', "</code>\n<code>"))
+    format!(
+        "<code>{}</code>",
+        html_generator.finalize().replace('\n', "</code>\n<code>")
+    )
 }
 
 #[instrument(skip(diff, syntax_set))]

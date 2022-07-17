@@ -121,17 +121,14 @@ impl CommitTree {
     }
 
     pub fn fetch_latest_one(&self) -> Option<YokedCommit> {
-        self.last()
-            .unwrap()
-            .map(|(_, value)| {
-                // internally value is an Arc so it should already be stablederef but because
-                // of reasons unbeknownst to me, sled has its own Arc implementation so we need
-                // to box the value as well to get a stablederef...
-                let value = Box::new(value);
+        self.last().unwrap().map(|(_, value)| {
+            // internally value is an Arc so it should already be stablederef but because
+            // of reasons unbeknownst to me, sled has its own Arc implementation so we need
+            // to box the value as well to get a stablederef...
+            let value = Box::new(value);
 
-                Yoke::try_attach_to_cart(value, |data: &IVec| bincode::deserialize(&data))
-                    .unwrap()
-            })
+            Yoke::try_attach_to_cart(value, |data: &IVec| bincode::deserialize(&data)).unwrap()
+        })
     }
 
     pub async fn fetch_latest(&self, amount: usize, offset: usize) -> Vec<YokedCommit> {

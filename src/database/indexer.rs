@@ -51,14 +51,20 @@ fn update_repository_reflog(scan_path: &Path, db: &sled::Db) {
                 continue;
             }
 
-            let span = info_span!("index_update", reference = reference_name.as_ref(), repository = relative_path);
+            let span = info_span!(
+                "index_update",
+                reference = reference_name.as_ref(),
+                repository = relative_path
+            );
             let _entered = span.enter();
 
             info!("Refreshing indexes");
 
             let commit_tree = db_repository.get().commit_tree(db, &reference_name);
 
-            if let (Some(latest_indexed), Ok(latest_commit)) = (commit_tree.fetch_latest_one(), reference.peel_to_commit()) {
+            if let (Some(latest_indexed), Ok(latest_commit)) =
+                (commit_tree.fetch_latest_one(), reference.peel_to_commit())
+            {
                 if latest_commit.id().as_bytes() == &*latest_indexed.get().hash {
                     info!("No commits since last index");
                     continue;

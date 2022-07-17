@@ -530,7 +530,7 @@ fn format_diff(diff: &git2::Diff<'_>, syntax_set: &SyntaxSet) -> String {
             _ => (None, false),
         };
 
-        let line = std::str::from_utf8(diff_line.content()).unwrap();
+        let line = String::from_utf8_lossy(diff_line.content());
 
         let extension = if should_highlight_as_source {
             let path = delta.new_file().path().unwrap();
@@ -547,7 +547,7 @@ fn format_diff(diff: &git2::Diff<'_>, syntax_set: &SyntaxSet) -> String {
         let mut html_generator =
             ClassedHTMLGenerator::new_with_class_style(syntax, &syntax_set, ClassStyle::Spaced);
         html_generator
-            .parse_html_for_line_which_includes_newline(line)
+            .parse_html_for_line_which_includes_newline(&line)
             .unwrap();
         if let Some(class) = class {
             write!(diff_output, r#"<span class="diff-{class}">"#).unwrap();

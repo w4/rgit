@@ -1,7 +1,7 @@
 use git2::Sort;
 use std::path::{Path, PathBuf};
 use time::OffsetDateTime;
-use tracing::info;
+use tracing::{info, info_span};
 
 use crate::database::schema::{
     commit::Commit,
@@ -44,25 +44,31 @@ fn update_repository_reflog(scan_path: &Path, db: &sled::Db) {
         let git_repository = git2::Repository::open(scan_path.join(&relative_path)).unwrap();
 
         for reference in git_repository.references().unwrap() {
-            let reference = if let Some(reference) = reference.as_ref().ok().and_then(|v| v.name())
-            {
-                reference
-            } else {
-                continue;
-            };
+            let reference = reference.unwrap();
 
-            if !reference.starts_with("refs/heads/") {
+            let reference_name = String::from_utf8_lossy(reference.name_bytes());
+            if !reference_name.starts_with("refs/heads/") {
                 continue;
             }
 
-            info!("Updating indexes for {} on {}", reference, relative_path);
+            let span = info_span!("index_update", reference = reference_name.as_ref(), repository = relative_path);
+            let _entered = span.enter();
 
-            let commit_tree = db_repository.get().commit_tree(db, reference);
+            info!("Refreshing indexes");
+
+            let commit_tree = db_repository.get().commit_tree(db, &reference_name);
+
+            if let (Some(latest_indexed), Ok(latest_commit)) = (commit_tree.fetch_latest_one(), reference.peel_to_commit()) {
+                if latest_commit.id().as_bytes() == &*latest_indexed.get().hash {
+                    info!("No commits since last index");
+                    continue;
+                }
+            }
 
             // TODO: only scan revs from the last time we looked
             let mut revwalk = git_repository.revwalk().unwrap();
             revwalk.set_sorting(Sort::REVERSE).unwrap();
-            revwalk.push_ref(reference).unwrap();
+            revwalk.push_ref(&reference_name).unwrap();
 
             let mut i = 0;
             for rev in revwalk {

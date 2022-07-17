@@ -9,8 +9,10 @@ use axum::{
 };
 use bat::assets::HighlightingAssets;
 use std::sync::Arc;
+use std::time::Duration;
 use syntect::html::ClassStyle;
 use tower_layer::layer_fn;
+use tracing::info;
 
 use crate::{git::Git, layers::logger::LoggingMiddleware};
 
@@ -33,9 +35,12 @@ async fn main() {
     std::thread::spawn({
         let db = db.clone();
 
-        move || {
+        move || loop {
+            info!("Running periodic index");
             crate::database::indexer::run_indexer(&db);
-            eprintln!("finished indexer");
+            info!("Finished periodic index");
+
+            std::thread::sleep(Duration::from_secs(300));
         }
     });
 

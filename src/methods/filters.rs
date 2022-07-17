@@ -5,3 +5,7 @@ pub fn timeago(s: time::OffsetDateTime) -> Result<String, askama::Error> {
 pub fn file_perms(s: &i32) -> Result<String, askama::Error> {
     Ok(unix_mode::to_string(s.unsigned_abs()))
 }
+
+pub fn hex(s: &[u8]) -> Result<String, askama::Error> {
+    Ok(hex::encode(s))
+}

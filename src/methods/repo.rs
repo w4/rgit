@@ -158,21 +158,30 @@ pub struct LogQuery {
 #[template(path = "repo/log.html")]
 pub struct LogView {
     repo: Repository,
-    commits: Vec<Commit>,
+    commits: Vec<crate::database::schema::commit::Commit>,
     next_offset: Option<usize>,
     branch: Option<String>,
 }
 
 pub async fn handle_log(
     Extension(repo): Extension<Repository>,
-    Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
-    Extension(git): Extension<Arc<Git>>,
+    Extension(db): Extension<sled::Db>,
     Query(query): Query<LogQuery>,
 ) -> Response {
-    let open_repo = git.repo(repository_path).await;
-    let (commits, next_offset) = open_repo
-        .commits(query.branch.as_deref(), query.offset.unwrap_or(0))
-        .await;
+    let offset = query.offset.unwrap_or(0);
+
+    let reference = format!("refs/heads/{}", query.branch.as_deref().unwrap_or("master"));
+    let repository =
+        crate::database::schema::repository::Repository::open(&db, &*repo).unwrap();
+    let commit_tree = repository.commit_tree(&db, &reference);
+    let mut commits = commit_tree.fetch_latest(101, offset);
+
+    let next_offset = if commits.len() == 101 {
+        commits.pop();
+        Some(offset + 100)
+    } else {
+        None
+    };
 
     into_response(&LogView {
         repo,

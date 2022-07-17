@@ -20,15 +20,17 @@ impl TreePrefix {
         prefixed
     }
 
-    pub fn commit_id<T: AsRef<[u8]>>(repository: RepositoryId, commit: T) -> Vec<u8> {
-        let commit = commit.as_ref();
+    pub fn commit_id<T: AsRef<[u8]>>(repository: RepositoryId, reference: T) -> Vec<u8> {
+        let reference = reference.as_ref();
 
         let mut prefixed = Vec::with_capacity(
-            commit.len() + std::mem::size_of::<RepositoryId>() + std::mem::size_of::<TreePrefix>(),
+            reference.len()
+                + std::mem::size_of::<RepositoryId>()
+                + std::mem::size_of::<TreePrefix>(),
         );
         prefixed.push(TreePrefix::Commit as u8);
         prefixed.extend_from_slice(&repository.to_ne_bytes());
-        prefixed.extend_from_slice(&commit);
+        prefixed.extend_from_slice(&reference);
 
         prefixed
     }

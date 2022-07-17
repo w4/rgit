@@ -299,49 +299,6 @@ impl OpenRepository {
             })
             .await
     }
-
-    #[instrument(skip(self))]
-    pub async fn commits(
-        self: Arc<Self>,
-        branch: Option<&str>,
-        offset: usize,
-    ) -> (Vec<Commit>, Option<usize>) {
-        const LIMIT: usize = 200;
-
-        let ref_name = branch.map(|branch| format!("refs/heads/{}", branch));
-
-        tokio::task::spawn_blocking(move || {
-            let repo = self.repo.lock();
-            let mut revs = repo.revwalk().unwrap();
-
-            if let Some(ref_name) = ref_name.as_deref() {
-                revs.push_ref(ref_name).unwrap();
-            } else {
-                revs.push_head().unwrap();
-            }
-
-            let mut commits: Vec<Commit> = revs
-                .skip(offset)
-                .take(LIMIT + 1)
-                .map(|rev| {
-                    let rev = rev.unwrap();
-                    repo.find_commit(rev).unwrap().into()
-                })
-                .collect();
-
-            // TODO: avoid having to take + 1 and popping the last commit off
-            let next_offset = if commits.len() > LIMIT {
-                commits.truncate(LIMIT);
-                Some(offset + LIMIT)
-            } else {
-                None
-            };
-
-            (commits, next_offset)
-        })
-        .await
-        .unwrap()
-    }
 }
 
 pub enum PathDestination {

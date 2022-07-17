@@ -1,31 +1,76 @@
+use git2::Sort;
 use std::path::{Path, PathBuf};
 use time::OffsetDateTime;
 
+use crate::database::schema::commit::{Author, Commit};
 use crate::database::schema::repository::{Repository, RepositoryId};
 
 pub fn run_indexer(db: &sled::Db) {
     let scan_path = Path::new("/Users/jordan/Code/test-git");
     update_repository_metadata(scan_path, &db);
 
-    for (relative_path, _repository) in Repository::fetch_all(&db) {
+    for (relative_path, db_repository) in Repository::fetch_all(&db) {
         let git_repository = git2::Repository::open(scan_path.join(relative_path)).unwrap();
 
         for reference in git_repository.references().unwrap() {
-            let _reference = if let Some(reference) = reference.as_ref().ok().and_then(|v| v.name())
+            let reference = if let Some(reference) = reference.as_ref().ok().and_then(|v| v.name())
             {
                 reference
             } else {
                 continue;
             };
 
-            // let mut revwalk = git_repository.revwalk().unwrap();
-            // revwalk.set_sorting(Sort::REVERSE).unwrap();
-            // revwalk.push_ref(reference).unwrap();
-            //
-            // for rev in revwalk {
-            //     let rev = rev.unwrap();
-            //     let commit = git_repository.find_commit(rev).unwrap();
-            // }
+            let commit_tree = db_repository.commit_tree(db, reference);
+
+            // TODO: only scan revs from the last time we looked
+            let mut revwalk = git_repository.revwalk().unwrap();
+            revwalk.set_sorting(Sort::REVERSE).unwrap();
+            revwalk.push_ref(reference).unwrap();
+
+            let mut i = 0;
+
+            for rev in revwalk {
+                let rev = rev.unwrap();
+                let commit = git_repository.find_commit(rev).unwrap();
+
+                let author = commit.author();
+                let committer = commit.committer();
+
+                // TODO: all these unwrap_or_defaults need to properly handle non-utf8 data
+                let author = Author {
+                    name: author.name().map(ToString::to_string).unwrap_or_default(),
+                    email: author.email().map(ToString::to_string).unwrap_or_default(),
+                    // TODO: this needs to deal with offset
+                    time: OffsetDateTime::from_unix_timestamp(author.when().seconds()).unwrap(),
+                };
+                let committer = Author {
+                    name: committer
+                        .name()
+                        .map(ToString::to_string)
+                        .unwrap_or_default(),
+                    email: committer
+                        .email()
+                        .map(ToString::to_string)
+                        .unwrap_or_default(),
+                    // TODO: this needs to deal with offset
+                    time: OffsetDateTime::from_unix_timestamp(committer.when().seconds()).unwrap(),
+                };
+
+                let db_commit = Commit {
+                    summary: commit
+                        .summary()
+                        .map(ToString::to_string)
+                        .unwrap_or_default(),
+                    message: commit.body().map(ToString::to_string).unwrap_or_default(),
+                    committer,
+                    author,
+                    hash: commit.id().as_bytes().to_vec(),
+                };
+
+                i += 1;
+
+                db_commit.insert(&commit_tree, i);
+            }
         }
     }
 }

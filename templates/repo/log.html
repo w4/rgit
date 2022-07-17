@@ -16,14 +16,14 @@
     {% for commit in commits %}
     <tr>
         <td>
-            <time datetime="{{ commit.committer().time() }}" title="{{ commit.committer().time() }}">
-                {{ commit.committer().time()|timeago }}
+            <time datetime="{{ commit.committer.time }}" title="{{ commit.committer.time }}">
+                {{ commit.committer.time.clone()|timeago }}
             </time>
         </td>
-        <td><a href="/{{ repo.display() }}/commit/?id={{ commit.oid() }}">{{ commit.summary() }}</a></td>
+        <td><a href="/{{ repo.display() }}/commit/?id={{ commit.hash|hex }}">{{ commit.summary }}</a></td>
         <td>
-            <img src="https://www.gravatar.com/avatar/{{ commit.author().email_md5() }}?s=13&d=retro" width="13" height="13">
-            {{ commit.author().name() }}
+            <img src="https://www.gravatar.com/avatar/{{ commit.author.email }}?s=13&d=retro" width="13" height="13">
+            {{ commit.author.name }}
         </td>
     </tr>
     {% endfor %}

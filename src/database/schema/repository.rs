@@ -1,4 +1,4 @@
-use crate::database::schema::commit::CommitVault;
+use crate::database::schema::commit::CommitTree;
 use crate::database::schema::prefixes::TreePrefix;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -27,6 +27,7 @@ impl Repository {
             .scan_prefix([TreePrefix::Repository as u8])
             .filter_map(Result::ok)
             .map(|(k, v)| {
+                // strip the prefix we've just scanned for
                 let key = String::from_utf8_lossy(&k[1..]).to_string();
                 let value = bincode::deserialize(&v).unwrap();
 
@@ -53,14 +54,12 @@ impl Repository {
             .unwrap()
     }
 
-    #[allow(dead_code)]
-    pub fn commit_vault(&self, database: &sled::Db, commit: &str) -> CommitVault {
-        let commit = hex::decode(commit).unwrap();
+    pub fn commit_tree(&self, database: &sled::Db, reference: &str) -> CommitTree {
         let tree = database
-            .open_tree(TreePrefix::commit_id(self.id, commit))
+            .open_tree(TreePrefix::commit_id(self.id, reference))
             .unwrap();
 
-        CommitVault::new(tree)
+        CommitTree::new(tree)
     }
 }
 

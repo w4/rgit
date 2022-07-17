@@ -41,7 +41,7 @@ async fn main() {
 
         move || loop {
             info!("Running periodic index");
-            crate::database::indexer::run_indexer(&db);
+            crate::database::indexer::run(&db);
             info!("Finished periodic index");
 
             std::thread::sleep(Duration::from_secs(300));

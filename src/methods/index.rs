@@ -17,8 +17,10 @@ pub struct View<'a> {
 pub async fn handle(Extension(db): Extension<sled::Db>) -> Response {
     let mut repositories: BTreeMap<Option<String>, Vec<&Repository<'_>>> = BTreeMap::new();
 
-    let fetched = Repository::fetch_all(&db);
-    for (k, v) in fetched.iter() {
+    let fetched = tokio::task::spawn_blocking(move || Repository::fetch_all(&db))
+        .await
+        .unwrap();
+    for (k, v) in &fetched {
         // TODO: fixme
         let mut split: Vec<_> = k.split('/').collect();
         split.pop();

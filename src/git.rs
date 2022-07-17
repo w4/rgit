@@ -86,7 +86,7 @@ impl OpenRepository {
             };
 
             if let Some(path) = path.as_ref() {
-                let item = tree.get_path(&path).unwrap();
+                let item = tree.get_path(path).unwrap();
                 let object = item.to_object(&repo).unwrap();
 
                 if let Some(blob) = object.as_blob() {
@@ -95,7 +95,7 @@ impl OpenRepository {
 
                     let extension = path
                         .extension()
-                        .or(path.file_name())
+                        .or_else(|| path.file_name())
                         .unwrap()
                         .to_string_lossy();
                     let content = format_file(blob.content(), &extension, &self.git.syntax_set);
@@ -498,7 +498,7 @@ fn fetch_diff_and_stats(
         .as_str()
         .unwrap()
         .to_string();
-    let diff_output = format_diff(&diff, &syntax_set);
+    let diff_output = format_diff(&diff, syntax_set);
 
     (diff_output, diff_stats)
 }
@@ -507,10 +507,10 @@ fn format_file(content: &[u8], extension: &str, syntax_set: &SyntaxSet) -> Strin
     let content = std::str::from_utf8(content).unwrap();
 
     let syntax = syntax_set
-        .find_syntax_by_extension(&extension)
-        .unwrap_or(syntax_set.find_syntax_plain_text());
+        .find_syntax_by_extension(extension)
+        .unwrap_or_else(|| syntax_set.find_syntax_plain_text());
     let mut html_generator =
-        ClassedHTMLGenerator::new_with_class_style(syntax, &syntax_set, ClassStyle::Spaced);
+        ClassedHTMLGenerator::new_with_class_style(syntax, syntax_set, ClassStyle::Spaced);
 
     for line in LinesWithEndings::from(content) {
         html_generator
@@ -544,7 +544,7 @@ fn format_diff(diff: &git2::Diff<'_>, syntax_set: &SyntaxSet) -> String {
         let extension = if should_highlight_as_source {
             let path = delta.new_file().path().unwrap();
             path.extension()
-                .or(path.file_name())
+                .or_else(|| path.file_name())
                 .unwrap()
                 .to_string_lossy()
         } else {
@@ -552,9 +552,9 @@ fn format_diff(diff: &git2::Diff<'_>, syntax_set: &SyntaxSet) -> String {
         };
         let syntax = syntax_set
             .find_syntax_by_extension(&extension)
-            .unwrap_or(syntax_set.find_syntax_plain_text());
+            .unwrap_or_else(|| syntax_set.find_syntax_plain_text());
         let mut html_generator =
-            ClassedHTMLGenerator::new_with_class_style(syntax, &syntax_set, ClassStyle::Spaced);
+            ClassedHTMLGenerator::new_with_class_style(syntax, syntax_set, ClassStyle::Spaced);
         html_generator
             .parse_html_for_line_which_includes_newline(&line)
             .unwrap();

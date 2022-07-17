@@ -45,7 +45,7 @@ impl Repository<'_> {
                 let value = Box::new(value);
 
                 let value =
-                    Yoke::try_attach_to_cart(value, |data: &IVec| bincode::deserialize(&data))
+                    Yoke::try_attach_to_cart(value, |data: &IVec| bincode::deserialize(data))
                         .unwrap();
 
                 (key, value)
@@ -72,7 +72,7 @@ impl Repository<'_> {
                 // to box the value as well to get a stablederef...
                 let value = Box::new(value);
 
-                Yoke::try_attach_to_cart(value, |data: &IVec| bincode::deserialize(&data))
+                Yoke::try_attach_to_cart(value, |data: &IVec| bincode::deserialize(data))
             })
             .transpose()
             .unwrap()

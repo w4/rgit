@@ -1,3 +1,6 @@
+// sorry clippy, we don't have a choice. askama forces this on us
+#![allow(clippy::unnecessary_wraps, clippy::trivially_copy_pass_by_ref)]
+
 pub fn timeago(s: time::OffsetDateTime) -> Result<String, askama::Error> {
     Ok(timeago::Formatter::new().convert((time::OffsetDateTime::now_utc() - s).unsigned_abs()))
 }

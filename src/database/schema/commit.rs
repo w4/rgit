@@ -27,12 +27,10 @@ impl<'a> Commit<'a> {
         Self {
             summary: commit
                 .summary_bytes()
-                .map(String::from_utf8_lossy)
-                .unwrap_or(Cow::Borrowed("")),
+                .map_or(Cow::Borrowed(""), String::from_utf8_lossy),
             message: commit
                 .body_bytes()
-                .map(String::from_utf8_lossy)
-                .unwrap_or(Cow::Borrowed("")),
+                .map_or(Cow::Borrowed(""), String::from_utf8_lossy),
             committer: committer.into(),
             author: author.into(),
             hash: CommitHash::Oid(commit.id()),
@@ -127,7 +125,7 @@ impl CommitTree {
             // to box the value as well to get a stablederef...
             let value = Box::new(value);
 
-            Yoke::try_attach_to_cart(value, |data: &IVec| bincode::deserialize(&data)).unwrap()
+            Yoke::try_attach_to_cart(value, |data: &IVec| bincode::deserialize(data)).unwrap()
         })
     }
 
@@ -156,7 +154,7 @@ impl CommitTree {
                     let value = Box::new(value);
 
                     Ok(
-                        Yoke::try_attach_to_cart(value, |data: &IVec| bincode::deserialize(&data))
+                        Yoke::try_attach_to_cart(value, |data: &IVec| bincode::deserialize(data))
                             .unwrap(),
                     )
                 })

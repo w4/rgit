@@ -30,7 +30,7 @@ impl TreePrefix {
         );
         prefixed.push(TreePrefix::Commit as u8);
         prefixed.extend_from_slice(&repository.to_ne_bytes());
-        prefixed.extend_from_slice(&reference);
+        prefixed.extend_from_slice(reference);
 
         prefixed
     }

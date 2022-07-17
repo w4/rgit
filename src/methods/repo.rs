@@ -16,6 +16,7 @@ use axum::{
 use path_clean::PathClean;
 use serde::Deserialize;
 use tower::{util::BoxCloneService, Service};
+use yoke::Yoke;
 
 use super::filters;
 use crate::git::{DetailedTag, FileWithContent, PathDestination, Refs, TreeItem};
@@ -182,7 +183,7 @@ pub async fn handle_log(
         None
     };
 
-    let commits = commits.iter().map(|v| v.get()).collect();
+    let commits = commits.iter().map(Yoke::get).collect();
 
     into_response(&LogView {
         repo,

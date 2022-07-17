@@ -1,5 +1,9 @@
 {% extends "../base.html" %}
 
+{% block header %}
+<a href="/" class="no-style">index</a> : {{ repo.display() }}
+{% endblock %}
+
 {% block nav %}
 <nav>
     <a href="/{{ repo.display() }}/about" class="{% block about_nav_class %}{% endblock %}">about</a>

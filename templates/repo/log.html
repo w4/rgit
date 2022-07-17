@@ -22,7 +22,7 @@
         </td>
         <td><a href="/{{ repo.display() }}/commit/?id={{ commit.hash|hex }}">{{ commit.summary }}</a></td>
         <td>
-            <img src="https://www.gravatar.com/avatar/{{ commit.author.email }}?s=13&d=retro" width="13" height="13">
+            <img src="https://www.gravatar.com/avatar/{{ commit.author.email|md5 }}?s=13&d=retro" width="13" height="13">
             {{ commit.author.name }}
         </td>
     </tr>

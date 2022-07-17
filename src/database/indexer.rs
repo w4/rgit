@@ -1,4 +1,5 @@
 use git2::Sort;
+use sled::Batch;
 use std::path::{Path, PathBuf};
 use time::OffsetDateTime;
 use tracing::info;
@@ -68,27 +69,23 @@ fn update_repository_reflog(scan_path: &Path, db: &sled::Db) {
             let mut revwalk = git_repository.revwalk().unwrap();
             revwalk.set_sorting(Sort::REVERSE).unwrap();
             revwalk.push_ref(reference).unwrap();
-            let revs: Vec<_> = revwalk.collect::<Result<_, _>>().unwrap();
 
-            let git_repository = &git_repository;
+            let mut update_batch = Batch::default();
 
-            commit_tree
-                .transaction::<_, _, std::io::Error>(move |tx| {
-                    for (i, rev) in revs.iter().enumerate() {
-                        let commit = git_repository.find_commit(*rev).unwrap();
+            let mut i = 0;
+            for rev in revwalk {
+                let commit = git_repository.find_commit(rev.unwrap()).unwrap();
+                Commit::from(commit).insert(&mut update_batch, i);
+                i += 1;
+            }
 
-                        Commit::from(commit).insert(tx, i);
-                    }
+            // a complete and utter hack to remove potentially dropped commits from our tree,
+            // we'll need to add `clear()` to sled's tx api to remove this
+            for to_remove in (i + 1)..(i + 100) {
+                update_batch.remove(&to_remove.to_be_bytes());
+            }
 
-                    // a complete and utter hack to remove potentially dropped commits from our tree,
-                    // we'll need to add `clear()` to sled's tx api to remove this
-                    for to_remove in (revs.len() + 1)..(revs.len() + 100) {
-                        tx.remove(&to_remove.to_be_bytes())?;
-                    }
-
-                    Ok(())
-                })
-                .unwrap();
+            commit_tree.apply_batch(update_batch).unwrap();
         }
     }
 }

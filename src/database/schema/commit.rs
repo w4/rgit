@@ -1,6 +1,6 @@
 use git2::Signature;
 use serde::{Deserialize, Serialize};
-use sled::transaction::TransactionalTree;
+use sled::Batch;
 use std::ops::Deref;
 use time::OffsetDateTime;
 
@@ -29,10 +29,8 @@ impl From<git2::Commit<'_>> for Commit {
 }
 
 impl Commit {
-    pub fn insert(&self, database: &TransactionalTree, id: usize) {
-        database
-            .insert(&id.to_be_bytes(), bincode::serialize(self).unwrap())
-            .unwrap();
+    pub fn insert(&self, batch: &mut Batch, id: usize) {
+        batch.insert(&id.to_be_bytes(), bincode::serialize(self).unwrap());
     }
 }
 

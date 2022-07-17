@@ -211,6 +211,13 @@ impl OpenRepository {
                         }
                     }
 
+                    built_refs.branch.sort_unstable_by(|one, two| one.commit.committer.time.cmp(&two.commit.committer.time));
+                    built_refs.tag.sort_unstable_by(|one, two| {
+                        let one_tagger = one.tagger.as_ref().map(|v| v.time);
+                        let two_tagger = two.tagger.as_ref().map(|v| v.time);
+                        one_tagger.cmp(&two_tagger)
+                    });
+
                     Arc::new(built_refs)
                 })
                 .await

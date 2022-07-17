@@ -21,7 +21,7 @@ path-clean = "0.1"
 parking_lot = "0.12"
 serde = { version = "1.0", features = ["derive"] }
 syntect = "5"
-sled = "0.34"
+sled = { version = "0.34", features = ["compression"] }
 time = { version = "0.3", features = ["serde"] }
 timeago = "0.3"
 tokio = { version = "1.19", features = ["full"] }

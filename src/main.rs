@@ -30,7 +30,11 @@ async fn main() {
     let subscriber = subscriber.pretty();
     subscriber.init();
 
-    let db = sled::open("/tmp/some-sled.db").unwrap();
+    let db = sled::Config::default()
+        .use_compression(true)
+        .path("/tmp/some-sled.db")
+        .open()
+        .unwrap();
 
     std::thread::spawn({
         let db = db.clone();

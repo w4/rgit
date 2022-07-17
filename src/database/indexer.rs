@@ -64,30 +64,25 @@ fn update_repository_reflog(scan_path: &Path, db: &sled::Db) {
 
             let commit_tree = db_repository.commit_tree(db, reference);
 
+            // TODO: only scan revs from the last time we looked
+            let mut revwalk = git_repository.revwalk().unwrap();
+            revwalk.set_sorting(Sort::REVERSE).unwrap();
+            revwalk.push_ref(reference).unwrap();
+            let revs: Vec<_> = revwalk.collect::<Result<_, _>>().unwrap();
+
+            let git_repository = &git_repository;
+
             commit_tree
-                .transaction::<_, _, std::io::Error>(|tx| {
-                    // TODO: only scan revs from the last time we looked
-                    let mut revwalk = git_repository.revwalk().unwrap();
-                    revwalk.set_sorting(Sort::REVERSE).unwrap();
-                    revwalk.push_ref(reference).unwrap();
-
-                    let mut i = 0;
-                    for rev in revwalk {
-                        let rev = rev.unwrap();
-                        let commit = if let Ok(commit) = git_repository.find_commit(rev) {
-                            commit
-                        } else {
-                            continue;
-                        };
-
-                        i += 1;
+                .transaction::<_, _, std::io::Error>(move |tx| {
+                    for (i, rev) in revs.iter().enumerate() {
+                        let commit = git_repository.find_commit(*rev).unwrap();
 
                         Commit::from(commit).insert(tx, i);
                     }
 
                     // a complete and utter hack to remove potentially dropped commits from our tree,
                     // we'll need to add `clear()` to sled's tx api to remove this
-                    for to_remove in (i + 1)..(i + 100) {
+                    for to_remove in (revs.len() + 1)..(revs.len() + 100) {
                         tx.remove(&to_remove.to_be_bytes())?;
                     }
 

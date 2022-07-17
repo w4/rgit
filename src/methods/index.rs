@@ -10,21 +10,22 @@ use crate::into_response;
 
 #[derive(Template)]
 #[template(path = "index.html")]
-pub struct View {
-    pub repositories: BTreeMap<Option<String>, Vec<Repository>>,
+pub struct View<'a> {
+    pub repositories: BTreeMap<Option<String>, Vec<&'a Repository<'a>>>,
 }
 
 pub async fn handle(Extension(db): Extension<sled::Db>) -> Response {
-    let mut repositories: BTreeMap<Option<String>, Vec<Repository>> = BTreeMap::new();
+    let mut repositories: BTreeMap<Option<String>, Vec<&Repository<'_>>> = BTreeMap::new();
 
-    for (k, v) in Repository::fetch_all(&db) {
+    let fetched = Repository::fetch_all(&db);
+    for (k, v) in fetched.iter() {
         // TODO: fixme
         let mut split: Vec<_> = k.split('/').collect();
         split.pop();
         let key = Some(split.join("/")).filter(|v| !v.is_empty());
 
         let k = repositories.entry(key).or_default();
-        k.push(v);
+        k.push(v.get());
     }
 
     into_response(&View { repositories })

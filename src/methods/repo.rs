@@ -172,7 +172,7 @@ pub async fn handle_log(
 
     let reference = format!("refs/heads/{}", query.branch.as_deref().unwrap_or("master"));
     let repository = crate::database::schema::repository::Repository::open(&db, &*repo).unwrap();
-    let commit_tree = repository.commit_tree(&db, &reference);
+    let commit_tree = repository.get().commit_tree(&db, &reference);
     let mut commits = commit_tree.fetch_latest(101, offset).await;
 
     let next_offset = if commits.len() == 101 {

@@ -1,7 +1,8 @@
-use std::borrow::Cow;
+use crate::database::schema::Yoked;
 use git2::{Oid, Signature};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sled::IVec;
+use std::borrow::Cow;
 use std::ops::Deref;
 use time::OffsetDateTime;
 use yoke::{Yoke, Yokeable};
@@ -18,13 +19,20 @@ pub struct Commit<'a> {
 }
 
 impl<'a> Commit<'a> {
-    pub fn new(commit: &'a git2::Commit<'_>, author: &'a git2::Signature<'_>, committer: &'a git2::Signature<'_>) -> Self {
+    pub fn new(
+        commit: &'a git2::Commit<'_>,
+        author: &'a git2::Signature<'_>,
+        committer: &'a git2::Signature<'_>,
+    ) -> Self {
         Self {
             summary: commit
                 .summary_bytes()
                 .map(String::from_utf8_lossy)
                 .unwrap_or(Cow::Borrowed("")),
-            message: commit.body_bytes().map(String::from_utf8_lossy).unwrap_or(Cow::Borrowed("")),
+            message: commit
+                .body_bytes()
+                .map(String::from_utf8_lossy)
+                .unwrap_or(Cow::Borrowed("")),
             committer: committer.into(),
             author: author.into(),
             hash: CommitHash::Oid(commit.id()),
@@ -32,7 +40,9 @@ impl<'a> Commit<'a> {
     }
 
     pub fn insert(&self, batch: &CommitTree, id: usize) {
-        batch.insert(&id.to_be_bytes(), bincode::serialize(self).unwrap()).unwrap();
+        batch
+            .insert(&id.to_be_bytes(), bincode::serialize(self).unwrap())
+            .unwrap();
     }
 }
 
@@ -54,7 +64,10 @@ impl<'a> Deref for CommitHash<'a> {
 }
 
 impl Serialize for CommitHash<'_> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
         match self {
             CommitHash::Oid(v) => v.as_bytes().serialize(serializer),
             CommitHash::Bytes(v) => v.serialize(serializer),
@@ -63,7 +76,10 @@ impl Serialize for CommitHash<'_> {
 }
 
 impl<'a, 'de: 'a> Deserialize<'de> for CommitHash<'a> {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
         let bytes = <&'a [u8]>::deserialize(deserializer)?;
         Ok(Self::Bytes(bytes))
     }
@@ -97,14 +113,14 @@ impl Deref for CommitTree {
     }
 }
 
-pub type CommitYoke = Yoke<Commit<'static>, Box<IVec>>;
+pub type YokedCommit = Yoked<Commit<'static>>;
 
 impl CommitTree {
     pub(super) fn new(tree: sled::Tree) -> Self {
         Self(tree)
     }
 
-    pub async fn fetch_latest(&self, amount: usize, offset: usize) -> Vec<CommitYoke> {
+    pub async fn fetch_latest(&self, amount: usize, offset: usize) -> Vec<YokedCommit> {
         let latest_key = if let Some((latest_key, _)) = self.last().unwrap() {
             let mut latest_key_bytes = [0; std::mem::size_of::<usize>()];
             latest_key_bytes.copy_from_slice(&latest_key);
@@ -119,8 +135,7 @@ impl CommitTree {
         let iter = self.range(start.to_be_bytes()..end.to_be_bytes());
 
         tokio::task::spawn_blocking(move || {
-            iter
-                .rev()
+            iter.rev()
                 .map(|res| {
                     let (_, value) = res?;
 
@@ -129,7 +144,10 @@ impl CommitTree {
                     // to box the value as well to get a stablederef...
                     let value = Box::new(value);
 
-                    Ok(Yoke::try_attach_to_cart(value, |data: &IVec| bincode::deserialize(&data)).unwrap())
+                    Ok(
+                        Yoke::try_attach_to_cart(value, |data: &IVec| bincode::deserialize(&data))
+                            .unwrap(),
+                    )
                 })
                 .collect::<Result<Vec<_>, sled::Error>>()
                 .unwrap()

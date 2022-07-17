@@ -22,16 +22,11 @@ fn update_repository_metadata(scan_path: &Path, db: &sled::Db) {
         let relative = get_relative_path(scan_path, &repository);
 
         let id = Repository::open(db, relative)
-            .map(|v| v.id)
+            .map(|v| v.get().id)
             .unwrap_or_else(|| RepositoryId::new(db));
-        let name = relative.file_name().unwrap().to_string_lossy().to_string();
-        let description = Some(
-            String::from_utf8_lossy(
-                &std::fs::read(repository.join("description")).unwrap_or_default(),
-            )
-            .to_string(),
-        )
-        .filter(|v| !v.is_empty());
+        let name = relative.file_name().unwrap().to_string_lossy();
+        let description = std::fs::read(repository.join("description")).unwrap_or_default();
+        let description = Some(String::from_utf8_lossy(&description)).filter(|v| !v.is_empty());
 
         Repository {
             id,
@@ -62,7 +57,7 @@ fn update_repository_reflog(scan_path: &Path, db: &sled::Db) {
 
             info!("Updating indexes for {} on {}", reference, relative_path);
 
-            let commit_tree = db_repository.commit_tree(db, reference);
+            let commit_tree = db_repository.get().commit_tree(db, reference);
 
             // TODO: only scan revs from the last time we looked
             let mut revwalk = git_repository.revwalk().unwrap();

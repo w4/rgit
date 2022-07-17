@@ -1,51 +1,86 @@
-use git2::Signature;
-use serde::{Deserialize, Serialize};
-use sled::Batch;
+use std::borrow::Cow;
+use git2::{Oid, Signature};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use sled::IVec;
 use std::ops::Deref;
 use time::OffsetDateTime;
+use yoke::{Yoke, Yokeable};
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Commit {
-    pub summary: String,
-    pub message: String,
-    pub author: Author,
-    pub committer: Author,
-    pub hash: Vec<u8>,
+#[derive(Serialize, Deserialize, Debug, Yokeable)]
+pub struct Commit<'a> {
+    #[serde(borrow)]
+    pub summary: Cow<'a, str>,
+    #[serde(borrow)]
+    pub message: Cow<'a, str>,
+    pub author: Author<'a>,
+    pub committer: Author<'a>,
+    pub hash: CommitHash<'a>,
 }
 
-impl From<git2::Commit<'_>> for Commit {
-    fn from(commit: git2::Commit<'_>) -> Self {
-        Commit {
+impl<'a> Commit<'a> {
+    pub fn new(commit: &'a git2::Commit<'_>, author: &'a git2::Signature<'_>, committer: &'a git2::Signature<'_>) -> Self {
+        Self {
             summary: commit
-                .summary()
-                .map(ToString::to_string)
-                .unwrap_or_default(),
-            message: commit.body().map(ToString::to_string).unwrap_or_default(),
-            committer: commit.committer().into(),
-            author: commit.author().into(),
-            hash: commit.id().as_bytes().to_vec(),
+                .summary_bytes()
+                .map(String::from_utf8_lossy)
+                .unwrap_or(Cow::Borrowed("")),
+            message: commit.body_bytes().map(String::from_utf8_lossy).unwrap_or(Cow::Borrowed("")),
+            committer: committer.into(),
+            author: author.into(),
+            hash: CommitHash::Oid(commit.id()),
+        }
+    }
+
+    pub fn insert(&self, batch: &CommitTree, id: usize) {
+        batch.insert(&id.to_be_bytes(), bincode::serialize(self).unwrap()).unwrap();
+    }
+}
+
+#[derive(Debug)]
+pub enum CommitHash<'a> {
+    Oid(Oid),
+    Bytes(&'a [u8]),
+}
+
+impl<'a> Deref for CommitHash<'a> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            CommitHash::Oid(v) => v.as_bytes(),
+            CommitHash::Bytes(v) => v,
         }
     }
 }
 
-impl Commit {
-    pub fn insert(&self, batch: &mut Batch, id: usize) {
-        batch.insert(&id.to_be_bytes(), bincode::serialize(self).unwrap());
+impl Serialize for CommitHash<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+        match self {
+            CommitHash::Oid(v) => v.as_bytes().serialize(serializer),
+            CommitHash::Bytes(v) => v.serialize(serializer),
+        }
+    }
+}
+
+impl<'a, 'de: 'a> Deserialize<'de> for CommitHash<'a> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+        let bytes = <&'a [u8]>::deserialize(deserializer)?;
+        Ok(Self::Bytes(bytes))
     }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Author {
-    pub name: String,
-    pub email: String,
+pub struct Author<'a> {
+    pub name: Cow<'a, str>,
+    pub email: Cow<'a, str>,
     pub time: OffsetDateTime,
 }
 
-impl From<git2::Signature<'_>> for Author {
-    fn from(author: Signature<'_>) -> Self {
+impl<'a> From<&'a git2::Signature<'_>> for Author<'a> {
+    fn from(author: &'a Signature<'_>) -> Self {
         Self {
-            name: author.name().map(ToString::to_string).unwrap_or_default(),
-            email: author.email().map(ToString::to_string).unwrap_or_default(),
+            name: String::from_utf8_lossy(author.name_bytes()),
+            email: String::from_utf8_lossy(author.email_bytes()),
             // TODO: this needs to deal with offset
             time: OffsetDateTime::from_unix_timestamp(author.when().seconds()).unwrap(),
         }
@@ -62,28 +97,44 @@ impl Deref for CommitTree {
     }
 }
 
+pub type CommitYoke = Yoke<Commit<'static>, Box<IVec>>;
+
 impl CommitTree {
     pub(super) fn new(tree: sled::Tree) -> Self {
         Self(tree)
     }
 
-    pub fn fetch_latest(&self, amount: usize, offset: usize) -> Vec<Commit> {
-        let (latest_key, _) = self.last().unwrap().unwrap();
-        let mut latest_key_bytes = [0; std::mem::size_of::<usize>()];
-        latest_key_bytes.copy_from_slice(&latest_key);
+    pub async fn fetch_latest(&self, amount: usize, offset: usize) -> Vec<CommitYoke> {
+        let latest_key = if let Some((latest_key, _)) = self.last().unwrap() {
+            let mut latest_key_bytes = [0; std::mem::size_of::<usize>()];
+            latest_key_bytes.copy_from_slice(&latest_key);
+            usize::from_be_bytes(latest_key_bytes)
+        } else {
+            return vec![];
+        };
 
-        let end = usize::from_be_bytes(latest_key_bytes).saturating_sub(offset);
+        let end = latest_key.saturating_sub(offset);
         let start = end.saturating_sub(amount);
 
-        self.range(start.to_be_bytes()..end.to_be_bytes())
-            .rev()
-            .map(|res| {
-                let (_, value) = res?;
-                let details = bincode::deserialize(&value).unwrap();
+        let iter = self.range(start.to_be_bytes()..end.to_be_bytes());
 
-                Ok(details)
-            })
-            .collect::<Result<Vec<_>, sled::Error>>()
-            .unwrap()
+        tokio::task::spawn_blocking(move || {
+            iter
+                .rev()
+                .map(|res| {
+                    let (_, value) = res?;
+
+                    // internally value is an Arc so it should already be stablederef but because
+                    // of reasons unbeknownst to me, sled has its own Arc implementation so we need
+                    // to box the value as well to get a stablederef...
+                    let value = Box::new(value);
+
+                    Ok(Yoke::try_attach_to_cart(value, |data: &IVec| bincode::deserialize(&data)).unwrap())
+                })
+                .collect::<Result<Vec<_>, sled::Error>>()
+                .unwrap()
+        })
+        .await
+        .unwrap()
     }
 }

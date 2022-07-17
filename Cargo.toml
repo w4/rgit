@@ -32,6 +32,7 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 unix_mode = "0.1"
 uuid = { version = "1.1", features = ["v4"] }
+yoke = { version = "0.6", features = ["derive"] }
 
 [build-dependencies]
 anyhow = "1.0"

@@ -1,5 +1,4 @@
 use git2::Sort;
-use sled::Batch;
 use std::path::{Path, PathBuf};
 use time::OffsetDateTime;
 use tracing::info;
@@ -70,22 +69,21 @@ fn update_repository_reflog(scan_path: &Path, db: &sled::Db) {
             revwalk.set_sorting(Sort::REVERSE).unwrap();
             revwalk.push_ref(reference).unwrap();
 
-            let mut update_batch = Batch::default();
-
             let mut i = 0;
             for rev in revwalk {
                 let commit = git_repository.find_commit(rev.unwrap()).unwrap();
-                Commit::from(commit).insert(&mut update_batch, i);
+                let author = commit.author();
+                let committer = commit.committer();
+
+                Commit::new(&commit, &author, &committer).insert(&commit_tree, i);
                 i += 1;
             }
 
             // a complete and utter hack to remove potentially dropped commits from our tree,
             // we'll need to add `clear()` to sled's tx api to remove this
             for to_remove in (i + 1)..(i + 100) {
-                update_batch.remove(&to_remove.to_be_bytes());
+                commit_tree.remove(&to_remove.to_be_bytes()).unwrap();
             }
-
-            commit_tree.apply_batch(update_batch).unwrap();
         }
     }
 }

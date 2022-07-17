@@ -156,9 +156,9 @@ pub struct LogQuery {
 
 #[derive(Template)]
 #[template(path = "repo/log.html")]
-pub struct LogView {
+pub struct LogView<'a> {
     repo: Repository,
-    commits: Vec<crate::database::schema::commit::Commit>,
+    commits: Vec<&'a crate::database::schema::commit::Commit<'a>>,
     next_offset: Option<usize>,
     branch: Option<String>,
 }
@@ -173,7 +173,7 @@ pub async fn handle_log(
     let reference = format!("refs/heads/{}", query.branch.as_deref().unwrap_or("master"));
     let repository = crate::database::schema::repository::Repository::open(&db, &*repo).unwrap();
     let commit_tree = repository.commit_tree(&db, &reference);
-    let mut commits = commit_tree.fetch_latest(101, offset);
+    let mut commits = commit_tree.fetch_latest(101, offset).await;
 
     let next_offset = if commits.len() == 101 {
         commits.pop();
@@ -181,6 +181,8 @@ pub async fn handle_log(
     } else {
         None
     };
+
+    let commits = commits.iter().map(|v| v.get()).collect();
 
     into_response(&LogView {
         repo,

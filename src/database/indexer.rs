@@ -1,9 +1,12 @@
 use git2::Sort;
 use std::path::{Path, PathBuf};
 use time::OffsetDateTime;
+use tracing::info;
 
-use crate::database::schema::commit::{Author, Commit};
-use crate::database::schema::repository::{Repository, RepositoryId};
+use crate::database::schema::{
+    commit::Commit,
+    repository::{Repository, RepositoryId},
+};
 
 pub fn run_indexer(db: &sled::Db) {
     let scan_path = Path::new("/Users/jordan/Code/test-git");
@@ -43,7 +46,7 @@ fn update_repository_metadata(scan_path: &Path, db: &sled::Db) {
 
 fn update_repository_reflog(scan_path: &Path, db: &sled::Db) {
     for (relative_path, db_repository) in Repository::fetch_all(&db) {
-        let git_repository = git2::Repository::open(scan_path.join(relative_path)).unwrap();
+        let git_repository = git2::Repository::open(scan_path.join(&relative_path)).unwrap();
 
         for reference in git_repository.references().unwrap() {
             let reference = if let Some(reference) = reference.as_ref().ok().and_then(|v| v.name())
@@ -53,61 +56,44 @@ fn update_repository_reflog(scan_path: &Path, db: &sled::Db) {
                 continue;
             };
 
+            if !reference.starts_with("refs/heads/") {
+                continue;
+            }
+
+            info!("Updating indexes for {} on {}", reference, relative_path);
+
             let commit_tree = db_repository.commit_tree(db, reference);
 
-            // TODO: only scan revs from the last time we looked
-            let mut revwalk = git_repository.revwalk().unwrap();
-            revwalk.set_sorting(Sort::REVERSE).unwrap();
-            revwalk.push_ref(reference).unwrap();
+            commit_tree
+                .transaction::<_, _, std::io::Error>(|tx| {
+                    // TODO: only scan revs from the last time we looked
+                    let mut revwalk = git_repository.revwalk().unwrap();
+                    revwalk.set_sorting(Sort::REVERSE).unwrap();
+                    revwalk.push_ref(reference).unwrap();
 
-            let mut i = 0;
+                    let mut i = 0;
+                    for rev in revwalk {
+                        let rev = rev.unwrap();
+                        let commit = if let Ok(commit) = git_repository.find_commit(rev) {
+                            commit
+                        } else {
+                            continue;
+                        };
 
-            for rev in revwalk {
-                let rev = rev.unwrap();
-                let commit = if let Ok(commit) = git_repository.find_commit(rev) {
-                    commit
-                } else {
-                    continue;
-                };
+                        i += 1;
 
-                let author = commit.author();
-                let committer = commit.committer();
+                        Commit::from(commit).insert(tx, i);
+                    }
 
-                // TODO: all these unwrap_or_defaults need to properly handle non-utf8 data
-                let author = Author {
-                    name: author.name().map(ToString::to_string).unwrap_or_default(),
-                    email: author.email().map(ToString::to_string).unwrap_or_default(),
-                    // TODO: this needs to deal with offset
-                    time: OffsetDateTime::from_unix_timestamp(author.when().seconds()).unwrap(),
-                };
-                let committer = Author {
-                    name: committer
-                        .name()
-                        .map(ToString::to_string)
-                        .unwrap_or_default(),
-                    email: committer
-                        .email()
-                        .map(ToString::to_string)
-                        .unwrap_or_default(),
-                    // TODO: this needs to deal with offset
-                    time: OffsetDateTime::from_unix_timestamp(committer.when().seconds()).unwrap(),
-                };
+                    // a complete and utter hack to remove potentially dropped commits from our tree,
+                    // we'll need to add `clear()` to sled's tx api to remove this
+                    for to_remove in (i + 1)..(i + 100) {
+                        tx.remove(&to_remove.to_be_bytes())?;
+                    }
 
-                let db_commit = Commit {
-                    summary: commit
-                        .summary()
-                        .map(ToString::to_string)
-                        .unwrap_or_default(),
-                    message: commit.body().map(ToString::to_string).unwrap_or_default(),
-                    committer,
-                    author,
-                    hash: commit.id().as_bytes().to_vec(),
-                };
-
-                i += 1;
-
-                db_commit.insert(&commit_tree, i);
-            }
+                    Ok(())
+                })
+                .unwrap();
         }
     }
 }

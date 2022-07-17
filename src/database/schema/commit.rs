@@ -1,4 +1,6 @@
+use git2::Signature;
 use serde::{Deserialize, Serialize};
+use sled::transaction::TransactionalTree;
 use std::ops::Deref;
 use time::OffsetDateTime;
 
@@ -11,6 +13,29 @@ pub struct Commit {
     pub hash: Vec<u8>,
 }
 
+impl From<git2::Commit<'_>> for Commit {
+    fn from(commit: git2::Commit<'_>) -> Self {
+        Commit {
+            summary: commit
+                .summary()
+                .map(ToString::to_string)
+                .unwrap_or_default(),
+            message: commit.body().map(ToString::to_string).unwrap_or_default(),
+            committer: commit.committer().into(),
+            author: commit.author().into(),
+            hash: commit.id().as_bytes().to_vec(),
+        }
+    }
+}
+
+impl Commit {
+    pub fn insert(&self, database: &TransactionalTree, id: usize) {
+        database
+            .insert(&id.to_be_bytes(), bincode::serialize(self).unwrap())
+            .unwrap();
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Author {
     pub name: String,
@@ -18,11 +43,14 @@ pub struct Author {
     pub time: OffsetDateTime,
 }
 
-impl Commit {
-    pub fn insert(&self, database: &CommitTree, id: usize) {
-        database
-            .insert(id.to_be_bytes(), bincode::serialize(self).unwrap())
-            .unwrap();
+impl From<git2::Signature<'_>> for Author {
+    fn from(author: Signature<'_>) -> Self {
+        Self {
+            name: author.name().map(ToString::to_string).unwrap_or_default(),
+            email: author.email().map(ToString::to_string).unwrap_or_default(),
+            // TODO: this needs to deal with offset
+            time: OffsetDateTime::from_unix_timestamp(author.when().seconds()).unwrap(),
+        }
     }
 }
 

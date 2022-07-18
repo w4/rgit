@@ -6,9 +6,11 @@ use std::{
 };
 
 use askama::Template;
+use axum::http::HeaderValue;
 use axum::{
     extract::Query,
     handler::Handler,
+    http,
     http::Request,
     response::{IntoResponse, Response},
     Extension,
@@ -66,6 +68,7 @@ pub async fn service<ReqBody: Send + 'static>(mut request: Request<ReqBody>) -> 
         Some("tree") => BoxCloneService::new(handle_tree.into_service()),
         Some("commit") => BoxCloneService::new(handle_commit.into_service()),
         Some("diff") => BoxCloneService::new(handle_diff.into_service()),
+        Some("patch") => BoxCloneService::new(handle_patch.into_service()),
         Some("tag") => BoxCloneService::new(handle_tag.into_service()),
         Some(v) => {
             uri_parts.push(v);
@@ -86,8 +89,6 @@ pub async fn service<ReqBody: Send + 'static>(mut request: Request<ReqBody>) -> 
                 }
 
                 child_path = Some(reconstructed_path.into_iter().collect::<PathBuf>().clean());
-
-                eprintln!("repo path: {:?}", child_path);
 
                 BoxCloneService::new(handle_tree.into_service())
             } else {
@@ -353,4 +354,24 @@ pub async fn handle_diff(
     };
 
     into_response(&DiffView { repo, commit })
+}
+
+pub async fn handle_patch(
+    Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
+    Extension(git): Extension<Arc<Git>>,
+    Query(query): Query<CommitQuery>,
+) -> Response {
+    let open_repo = git.repo(repository_path).await;
+    let commit = if let Some(commit) = query.id {
+        open_repo.commit(&commit).await
+    } else {
+        Arc::new(open_repo.latest_commit().await)
+    };
+
+    let headers = [(
+        http::header::CONTENT_TYPE,
+        HeaderValue::from_static("text/plain"),
+    )];
+
+    (headers, commit.diff_plain.clone()).into_response()
 }

@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use syntect::html::ClassStyle;
 use tower_layer::layer_fn;
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::{git::Git, layers::logger::LoggingMiddleware};
 
@@ -90,6 +90,7 @@ fn static_css(content: &'static [u8]) -> impl Handler<()> {
     }
 }
 
+#[instrument(skip(t))]
 pub fn into_response<T: Template>(t: &T) -> Response {
     match t.render() {
         Ok(body) => {

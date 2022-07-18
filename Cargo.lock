@@ -1711,6 +1711,7 @@ dependencies = [
  "axum",
  "bat",
  "bincode",
+ "bytes",
  "clap",
  "futures",
  "git2",

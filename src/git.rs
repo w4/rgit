@@ -1,5 +1,6 @@
 use std::{borrow::Cow, fmt::Write, path::PathBuf, sync::Arc, time::Duration};
 
+use bytes::{Bytes, BytesMut};
 use git2::{
     BranchType, DiffFormat, DiffLineType, DiffOptions, DiffStatsFormat, ObjectType, Oid, Signature,
 };
@@ -270,12 +271,13 @@ impl OpenRepository {
 
             let head = repo.head().unwrap();
             let commit = head.peel_to_commit().unwrap();
-            let (diff_output, diff_stats) =
+            let (diff_plain, diff_output, diff_stats) =
                 fetch_diff_and_stats(&repo, &commit, &self.git.syntax_set);
 
             let mut commit = Commit::from(commit);
             commit.diff_stats = diff_stats;
             commit.diff = diff_output;
+            commit.diff_plain = diff_plain;
             commit
         })
         .await
@@ -294,12 +296,13 @@ impl OpenRepository {
                     let repo = self.repo.lock();
 
                     let commit = repo.find_commit(commit).unwrap();
-                    let (diff_output, diff_stats) =
+                    let (diff_plain, diff_output, diff_stats) =
                         fetch_diff_and_stats(&repo, &commit, &self.git.syntax_set);
 
                     let mut commit = Commit::from(commit);
                     commit.diff_stats = diff_stats;
                     commit.diff = diff_output;
+                    commit.diff_plain = diff_plain;
 
                     Arc::new(commit)
                 })
@@ -426,6 +429,7 @@ pub struct Commit {
     body: String,
     pub diff_stats: String,
     pub diff: String,
+    pub diff_plain: Bytes,
 }
 
 impl From<git2::Commit<'_>> for Commit {
@@ -440,6 +444,7 @@ impl From<git2::Commit<'_>> for Commit {
             body: commit.body().map(ToString::to_string).unwrap_or_default(),
             diff_stats: String::with_capacity(0),
             diff: String::with_capacity(0),
+            diff_plain: Bytes::new(),
         }
     }
 }
@@ -479,17 +484,22 @@ fn fetch_diff_and_stats(
     repo: &git2::Repository,
     commit: &git2::Commit<'_>,
     syntax_set: &SyntaxSet,
-) -> (String, String) {
+) -> (Bytes, String, String) {
     let current_tree = commit.tree().unwrap();
     let parent_tree = commit.parents().next().and_then(|v| v.tree().ok());
     let mut diff_opts = DiffOptions::new();
-    let diff = repo
+    let mut diff = repo
         .diff_tree_to_tree(
             parent_tree.as_ref(),
             Some(&current_tree),
             Some(&mut diff_opts),
         )
         .unwrap();
+
+    let mut diff_plain = BytesMut::new();
+    let email = diff.format_email(1, 1, commit, None).unwrap();
+    diff_plain.extend_from_slice(&*email);
+
     let diff_stats = diff
         .stats()
         .unwrap()
@@ -500,7 +510,7 @@ fn fetch_diff_and_stats(
         .to_string();
     let diff_output = format_diff(&diff, syntax_set);
 
-    (diff_output, diff_stats)
+    (diff_plain.freeze(), diff_output, diff_stats)
 }
 
 fn format_file(content: &[u8], extension: &str, syntax_set: &SyntaxSet) -> String {

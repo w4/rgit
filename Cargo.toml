@@ -9,6 +9,7 @@ edition = "2021"
 askama = "0.11"
 axum = "0.5"
 bat = { version = "0.21", default-features = false, features = ["build-assets"] }
+bytes = "1.1"
 bincode = "1.3"
 clap = { version = "3.2", features = ["cargo"] }
 futures = "0.3"

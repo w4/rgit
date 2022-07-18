@@ -113,13 +113,31 @@ pub async fn service<ReqBody: Send + 'static>(mut request: Request<ReqBody>) -> 
 
 #[derive(Template)]
 #[template(path = "repo/summary.html")]
-pub struct SummaryView {
-    pub repo: Repository,
+pub struct SummaryView<'a> {
+    repo: Repository,
+    refs: Arc<Refs>,
+    commit_list: Vec<&'a crate::database::schema::commit::Commit<'a>>,
 }
 
-#[allow(clippy::unused_async)]
-pub async fn handle_summary(Extension(repo): Extension<Repository>) -> Response {
-    into_response(&SummaryView { repo })
+pub async fn handle_summary(
+    Extension(repo): Extension<Repository>,
+    Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
+    Extension(git): Extension<Arc<Git>>,
+    Extension(db): Extension<sled::Db>,
+) -> Response {
+    let open_repo = git.repo(repository_path).await;
+    let refs = open_repo.refs().await;
+
+    let repository = crate::database::schema::repository::Repository::open(&db, &*repo).unwrap();
+    let commit_tree = repository.get().commit_tree(&db, "refs/heads/master");
+    let commits = commit_tree.fetch_latest(11, 0).await;
+    let commit_list = commits.iter().map(Yoke::get).collect();
+
+    into_response(&SummaryView {
+        repo,
+        refs,
+        commit_list,
+    })
 }
 
 #[derive(Deserialize)]

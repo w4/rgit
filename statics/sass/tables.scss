@@ -23,6 +23,10 @@ table.repositories {
         background: #f7f7f7;
       }
 
+      &.no-background {
+        background: none;
+      }
+
       &.has-parent td:first-of-type {
         padding-left: 1rem;
       }

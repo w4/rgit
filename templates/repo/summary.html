@@ -1,6 +1,62 @@
+{% import "macros/refs.html" as refs %}
 {% extends "repo/base.html" %}
 
 {% block summary_nav_class %}active{% endblock %}
 
 {% block content %}
+<table class="repositories">
+    {% call refs::branch_table(refs.branch.iter().take(10)) %}
+    {% if refs.branch.len() > 10 %}
+    <tbody>
+    <tr class="no-background">
+        <td><a href="/{{ repo.display() }}/refs" class="no-style">[...]</a></td>
+        <td></td>
+        <td></td>
+        <td></td>
+    </tr>
+    </tbody>
+    {% endif %}
+
+    <tbody>
+    <tr class="separator">
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+    </tr>
+    </tbody>
+
+    {% call refs::tag_table(refs.tag.iter().take(10)) %}
+    {% if refs.tag.len() > 10 %}
+    <tbody>
+    <tr class="no-background">
+        <td><a href="/{{ repo.display() }}/refs" class="no-style">[...]</a></td>
+        <td></td>
+        <td></td>
+        <td></td>
+    </tr>
+    </tbody>
+    {% endif %}
+
+    <tbody>
+    <tr class="separator">
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+    </tr>
+    </tbody>
+
+    {% call refs::commit_table(commit_list.iter().take(10), true) %}
+    {% if commit_list.len() > 10 %}
+    <tbody>
+    <tr class="no-background">
+        <td><a href="/{{ repo.display() }}/log" class="no-style">[...]</a></td>
+        <td></td>
+        <td></td>
+        <td></td>
+    </tr>
+    </tbody>
+    {% endif %}
+</table>
 {% endblock %}

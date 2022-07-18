@@ -1,0 +1,92 @@
+{% macro branch_table(branches) %}
+<thead>
+<tr>
+    <th>Branch</th>
+    <th>Commit message</th>
+    <th>Author</th>
+    <th>Age</th>
+</tr>
+</thead>
+
+<tbody>
+{% for branch in branches %}
+<tr>
+    <td><a href="/{{ repo.display() }}/log/?h={{ branch.name }}">{{ branch.name }}</a></td>
+    <td><a href="/{{ repo.display() }}/commit/?id={{ branch.commit.oid() }}">{{ branch.commit.summary() }}</a></td>
+    <td>
+        <img src="https://www.gravatar.com/avatar/{{ branch.commit.author().email_md5() }}?s=13&d=retro" width="13" height="13">
+        {{ branch.commit.author().name() }}
+    </td>
+    <td>
+        <time datetime="{{ branch.commit.author().time() }}" title="{{ branch.commit.author().time() }}">
+            {{ branch.commit.author().time()|timeago }}
+        </time>
+    </td>
+</tr>
+{% endfor %}
+</tbody>
+{% endmacro %}
+
+{% macro tag_table(tags) %}
+<thead>
+<tr class="no-background">
+    <th>Tag</th>
+    <th>Download</th>
+    <th>Author</th>
+    <th>Age</th>
+</tr>
+</thead>
+
+<tbody>
+{% for tag in tags %}
+<tr>
+    <td><a href="/{{ repo.display() }}/tag/?h={{ tag.name }}">{{ tag.name }}</a></td>
+    <td></td>
+    <td>
+        {% if let Some(tagger) = tag.tagger %}
+        <img src="https://www.gravatar.com/avatar/{{ tagger.email_md5() }}?s=13&d=retro" width="13" height="13">
+        {{ tagger.name() }}
+        {% endif %}
+    </td>
+    <td>
+        {% if let Some(tagger) = tag.tagger %}
+        <time datetime="{{ tagger.time() }}" title="{{ tagger.time() }}">
+            {{ tagger.time()|timeago }}
+        </time>
+        {% endif %}
+    </td>
+</tr>
+{% endfor %}
+</thead>
+{% endmacro %}
+
+{% macro commit_table(commits, with_extras) %}
+<thead>
+<tr>
+    <th>Age</th>
+    <th>Commit message</th>
+    <th>Author</th>
+</tr>
+</thead>
+
+<tbody>
+{% for commit in commits %}
+<tr>
+    <td>
+        <time datetime="{{ commit.committer.time }}" title="{{ commit.committer.time }}">
+            {{ commit.committer.time.clone()|timeago }}
+        </time>
+    </td>
+    <td><a href="/{{ repo.display() }}/commit/?id={{ commit.hash|hex }}">{{ commit.summary }}</a></td>
+    <td>
+        <img src="https://www.gravatar.com/avatar/{{ commit.author.email|md5 }}?s=13&d=retro" width="13" height="13">
+        {{ commit.author.name }}
+    </td>
+
+    {% if with_extras %}
+    <td></td>
+    {% endif %}
+</tr>
+{% endfor %}
+</tbody>
+{% endmacro %}

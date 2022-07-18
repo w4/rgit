@@ -1,33 +1,11 @@
+{% import "macros/refs.html" as refs %}
 {% extends "repo/base.html" %}
 
 {% block log_nav_class %}active{% endblock %}
 
 {% block content %}
 <table class="repositories">
-    <thead>
-    <tr>
-        <th>Age</th>
-        <th>Commit message</th>
-        <th>Author</th>
-    </tr>
-    </thead>
-
-    <tbody>
-    {% for commit in commits %}
-    <tr>
-        <td>
-            <time datetime="{{ commit.committer.time }}" title="{{ commit.committer.time }}">
-                {{ commit.committer.time.clone()|timeago }}
-            </time>
-        </td>
-        <td><a href="/{{ repo.display() }}/commit/?id={{ commit.hash|hex }}">{{ commit.summary }}</a></td>
-        <td>
-            <img src="https://www.gravatar.com/avatar/{{ commit.author.email|md5 }}?s=13&d=retro" width="13" height="13">
-            {{ commit.author.name }}
-        </td>
-    </tr>
-    {% endfor %}
-    </tbody>
+    {% call refs::commit_table(commits, false) %}
 </table>
 
 {% if let Some(next_offset) = next_offset %}

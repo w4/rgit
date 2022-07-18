@@ -21,7 +21,7 @@
     </tr>
     <tr>
         <th>commit</th>
-        <td colspan="2"><pre>{{ commit.oid() }}</pre></td>
+        <td colspan="2"><pre><a href="/{{ repo.display() }}/commit?id={{ commit.oid() }}" class="no-style">{{ commit.oid() }}</a></pre></td>
     </tr>
     <tr>
         <th>tree</th>
@@ -30,7 +30,7 @@
     {% for parent in commit.parents() %}
     <tr>
         <th>parent</th>
-        <td colspan="2"><pre>{{ parent }}</pre></td>
+        <td colspan="2"><pre><a href="/{{ repo.display() }}/commit?id={{ parent }}" class="no-style">{{ parent }}</a></pre></td>
     </tr>
     {% endfor %}
     </tbody>

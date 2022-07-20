@@ -1,20 +1,24 @@
-use std::fmt::{Display, Formatter};
 use std::{
+    fmt::{Debug, Display, Formatter},
+    io::Write,
     ops::Deref,
     path::{Path, PathBuf},
+    process::Stdio,
     sync::Arc,
 };
 
 use askama::Template;
-use axum::http::HeaderValue;
 use axum::{
+    body::HttpBody,
     extract::Query,
     handler::Handler,
     http,
+    http::HeaderValue,
     http::Request,
     response::{IntoResponse, Response},
     Extension,
 };
+use bytes::Bytes;
 use path_clean::PathClean;
 use serde::Deserialize;
 use tower::{util::BoxCloneService, Service};
@@ -50,7 +54,13 @@ impl Deref for RepositoryPath {
 }
 
 // this is some wicked, wicked abuse of axum right here...
-pub async fn service<ReqBody: Send + 'static>(mut request: Request<ReqBody>) -> Response {
+pub async fn service<ReqBody: HttpBody + Send + Debug + 'static>(
+    mut request: Request<ReqBody>,
+) -> Response
+where
+    <ReqBody as HttpBody>::Data: Send + Sync,
+    <ReqBody as HttpBody>::Error: std::error::Error + Send + Sync,
+{
     let mut uri_parts: Vec<&str> = request
         .uri()
         .path()
@@ -63,6 +73,13 @@ pub async fn service<ReqBody: Send + 'static>(mut request: Request<ReqBody>) -> 
 
     let mut service = match uri_parts.pop() {
         Some("about") => BoxCloneService::new(handle_about.into_service()),
+        // TODO: https://man.archlinux.org/man/git-http-backend.1.en
+        // TODO: GIT_PROTOCOL
+        Some("refs") if uri_parts.last() == Some(&"info") => {
+            uri_parts.pop();
+            BoxCloneService::new(handle_info_refs.into_service())
+        }
+        Some("git-upload-pack") => BoxCloneService::new(handle_git_upload_pack.into_service()),
         Some("refs") => BoxCloneService::new(handle_refs.into_service()),
         Some("log") => BoxCloneService::new(handle_log.into_service()),
         Some("tree") => BoxCloneService::new(handle_tree.into_service()),
@@ -210,6 +227,50 @@ pub async fn handle_log(
         next_offset,
         branch: query.branch,
     })
+}
+
+#[derive(Deserialize)]
+pub struct SmartGitQuery {
+    service: String,
+}
+
+pub async fn handle_info_refs(
+    Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
+    Query(query): Query<SmartGitQuery>,
+) -> Response {
+    // todo: tokio command
+    let out = std::process::Command::new("git")
+        .arg("http-backend")
+        .env("REQUEST_METHOD", "GET")
+        .env("PATH_INFO", "/info/refs")
+        .env("GIT_PROJECT_ROOT", repository_path)
+        .env("QUERY_STRING", format!("service={}", query.service))
+        .output()
+        .unwrap();
+
+    crate::git_cgi::cgi_to_response(&out.stdout)
+}
+
+pub async fn handle_git_upload_pack(
+    Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
+    body: Bytes,
+) -> Response {
+    // todo: tokio command
+    let mut child = std::process::Command::new("git")
+        .arg("http-backend")
+        // todo: read all this from request
+        .env("REQUEST_METHOD", "POST")
+        .env("CONTENT_TYPE", "application/x-git-upload-pack-request")
+        .env("PATH_INFO", "/git-upload-pack")
+        .env("GIT_PROJECT_ROOT", repository_path)
+        .stdout(Stdio::piped())
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.as_mut().unwrap().write_all(&body).unwrap();
+    let out = child.wait_with_output().unwrap();
+
+    crate::git_cgi::cgi_to_response(&out.stdout)
 }
 
 #[derive(Template)]

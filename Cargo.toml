@@ -16,6 +16,7 @@ futures = "0.3"
 git2 = "0.14"
 hex = "0.4"
 humantime = "2.1"
+nom = "7.1"
 md5 = "0.7"
 moka = { version = "0.9", features = ["future"] }
 path-clean = "0.1"
@@ -33,6 +34,7 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 unix_mode = "0.1"
 uuid = { version = "1.1", features = ["v4"] }
+httparse = "1.7"
 yoke = { version = "0.6", features = ["derive"] }
 
 [build-dependencies]

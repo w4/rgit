@@ -18,9 +18,7 @@ impl SyntaxHighlighterAdapter for ComrakSyntectAdapter<'_> {
             ClassedHTMLGenerator::new_with_class_style(syntax, self.syntax_set, ClassStyle::Spaced);
 
         for line in LinesWithEndings::from(code) {
-            html_generator
-                .parse_html_for_line_which_includes_newline(line)
-                .unwrap();
+            let _ = html_generator.parse_html_for_line_which_includes_newline(line);
         }
 
         format!(

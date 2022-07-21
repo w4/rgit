@@ -21,8 +21,9 @@ fn update_repository_metadata(scan_path: &Path, db: &sled::Db) {
     for repository in discovered {
         let relative = get_relative_path(scan_path, &repository);
 
-        let id =
-            Repository::open(db, relative).map_or_else(|| RepositoryId::new(db), |v| v.get().id);
+        let id = Repository::open(db, relative)
+            .unwrap()
+            .map_or_else(|| RepositoryId::new(db), |v| v.get().id);
         let name = relative.file_name().unwrap().to_string_lossy();
         let description = std::fs::read(repository.join("description")).unwrap_or_default();
         let description = Some(String::from_utf8_lossy(&description)).filter(|v| !v.is_empty());
@@ -39,7 +40,7 @@ fn update_repository_metadata(scan_path: &Path, db: &sled::Db) {
 }
 
 fn update_repository_reflog(scan_path: &Path, db: &sled::Db) {
-    for (relative_path, db_repository) in Repository::fetch_all(db) {
+    for (relative_path, db_repository) in Repository::fetch_all(db).unwrap() {
         let git_repository = git2::Repository::open(scan_path.join(&relative_path)).unwrap();
 
         for reference in git_repository.references().unwrap() {
@@ -59,7 +60,10 @@ fn update_repository_reflog(scan_path: &Path, db: &sled::Db) {
 
             info!("Refreshing indexes");
 
-            let commit_tree = db_repository.get().commit_tree(db, &reference_name);
+            let commit_tree = db_repository
+                .get()
+                .commit_tree(db, &reference_name)
+                .unwrap();
 
             if let (Some(latest_indexed), Ok(latest_commit)) =
                 (commit_tree.fetch_latest_one(), reference.peel_to_commit())

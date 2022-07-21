@@ -1,3 +1,4 @@
+use anyhow::Context;
 use std::collections::BTreeMap;
 
 use askama::Template;
@@ -14,12 +15,12 @@ pub struct View<'a> {
     pub repositories: BTreeMap<Option<String>, Vec<&'a Repository<'a>>>,
 }
 
-pub async fn handle(Extension(db): Extension<sled::Db>) -> Response {
+pub async fn handle(Extension(db): Extension<sled::Db>) -> Result<Response, super::repo::Error> {
     let mut repositories: BTreeMap<Option<String>, Vec<&Repository<'_>>> = BTreeMap::new();
 
     let fetched = tokio::task::spawn_blocking(move || Repository::fetch_all(&db))
         .await
-        .unwrap();
+        .context("Failed to join Tokio task")??;
     for (k, v) in &fetched {
         // TODO: fixme
         let mut split: Vec<_> = k.split('/').collect();
@@ -30,5 +31,5 @@ pub async fn handle(Extension(db): Extension<sled::Db>) -> Response {
         k.push(v.get());
     }
 
-    into_response(&View { repositories })
+    Ok(into_response(&View { repositories }))
 }

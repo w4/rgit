@@ -1,3 +1,4 @@
+use anyhow::Context;
 use std::{
     fmt::{Debug, Display, Formatter},
     io::Write,
@@ -175,8 +176,9 @@ pub async fn handle_summary(
     let open_repo = git.repo(repository_path).await?;
     let refs = open_repo.refs().await?;
 
-    let repository = crate::database::schema::repository::Repository::open(&db, &*repo).unwrap();
-    let commit_tree = repository.get().commit_tree(&db, "refs/heads/master");
+    let repository = crate::database::schema::repository::Repository::open(&db, &*repo)?
+        .context("Repository does not exist")?;
+    let commit_tree = repository.get().commit_tree(&db, "refs/heads/master")?;
     let commits = commit_tree.fetch_latest(11, 0).await;
     let commit_list = commits.iter().map(Yoke::get).collect();
 
@@ -237,8 +239,9 @@ pub async fn handle_log(
     let offset = query.offset.unwrap_or(0);
 
     let reference = format!("refs/heads/{}", query.branch.as_deref().unwrap_or("master"));
-    let repository = crate::database::schema::repository::Repository::open(&db, &*repo).unwrap();
-    let commit_tree = repository.get().commit_tree(&db, &reference);
+    let repository = crate::database::schema::repository::Repository::open(&db, &*repo)?
+        .context("Repository does not exist")?;
+    let commit_tree = repository.get().commit_tree(&db, &reference)?;
     let mut commits = commit_tree.fetch_latest(101, offset).await;
 
     let next_offset = if commits.len() == 101 {
@@ -277,7 +280,7 @@ pub async fn handle_info_refs(
         .output()
         .unwrap();
 
-    Ok(crate::git_cgi::cgi_to_response(&out.stdout))
+    Ok(crate::git_cgi::cgi_to_response(&out.stdout)?)
 }
 
 pub async fn handle_git_upload_pack(
@@ -299,7 +302,7 @@ pub async fn handle_git_upload_pack(
     child.stdin.as_mut().unwrap().write_all(&body).unwrap();
     let out = child.wait_with_output().unwrap();
 
-    Ok(crate::git_cgi::cgi_to_response(&out.stdout))
+    Ok(crate::git_cgi::cgi_to_response(&out.stdout)?)
 }
 
 #[derive(Template)]

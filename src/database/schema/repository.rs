@@ -1,6 +1,7 @@
 use crate::database::schema::commit::CommitTree;
 use crate::database::schema::prefixes::TreePrefix;
 use crate::database::schema::Yoked;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use sled::IVec;
 use std::borrow::Cow;
@@ -31,7 +32,7 @@ pub struct Repository<'a> {
 pub type YokedRepository = Yoked<Repository<'static>>;
 
 impl Repository<'_> {
-    pub fn fetch_all(database: &sled::Db) -> BTreeMap<String, YokedRepository> {
+    pub fn fetch_all(database: &sled::Db) -> Result<BTreeMap<String, YokedRepository>> {
         database
             .scan_prefix([TreePrefix::Repository as u8])
             .filter_map(Result::ok)
@@ -45,10 +46,9 @@ impl Repository<'_> {
                 let value = Box::new(value);
 
                 let value =
-                    Yoke::try_attach_to_cart(value, |data: &IVec| bincode::deserialize(data))
-                        .unwrap();
+                    Yoke::try_attach_to_cart(value, |data: &IVec| bincode::deserialize(data))?;
 
-                (key, value)
+                Ok((key, value))
             })
             .collect()
     }
@@ -62,10 +62,10 @@ impl Repository<'_> {
             .unwrap();
     }
 
-    pub fn open<P: AsRef<Path>>(database: &sled::Db, path: P) -> Option<YokedRepository> {
+    pub fn open<P: AsRef<Path>>(database: &sled::Db, path: P) -> Result<Option<YokedRepository>> {
         database
             .get(TreePrefix::repository_id(path))
-            .unwrap()
+            .context("Failed to open indexed repository")?
             .map(|value| {
                 // internally value is an Arc so it should already be stablederef but because
                 // of reasons unbeknownst to me, sled has its own Arc implementation so we need
@@ -73,17 +73,17 @@ impl Repository<'_> {
                 let value = Box::new(value);
 
                 Yoke::try_attach_to_cart(value, |data: &IVec| bincode::deserialize(data))
+                    .context("Failed to deserialise indexed repository")
             })
             .transpose()
-            .unwrap()
     }
 
-    pub fn commit_tree(&self, database: &sled::Db, reference: &str) -> CommitTree {
+    pub fn commit_tree(&self, database: &sled::Db, reference: &str) -> Result<CommitTree> {
         let tree = database
             .open_tree(TreePrefix::commit_id(self.id, reference))
-            .unwrap();
+            .context("Failed to open commit tree")?;
 
-        CommitTree::new(tree)
+        Ok(CommitTree::new(tree))
     }
 }
 

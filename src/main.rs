@@ -52,13 +52,14 @@ async fn main() {
 
     let bat_assets = HighlightingAssets::from_binary();
     let syntax_set = bat_assets.get_syntax_set().unwrap().clone();
+
     let theme = bat_assets.get_theme("GitHub");
-    let css = Box::leak(
-        syntect::html::css_for_theme_with_class_style(theme, ClassStyle::Spaced)
-            .unwrap()
-            .into_boxed_str()
-            .into_boxed_bytes(),
-    );
+    let css = syntect::html::css_for_theme_with_class_style(theme, ClassStyle::Spaced).unwrap();
+    let css = Box::leak(format!(r#"@media (prefers-color-scheme: light){{{}}}"#, css).into_boxed_str().into_boxed_bytes());
+
+    let dark_theme = bat_assets.get_theme("TwoDark");
+    let dark_css = syntect::html::css_for_theme_with_class_style(dark_theme, ClassStyle::Spaced).unwrap();
+    let dark_css = Box::leak(format!(r#"@media (prefers-color-scheme: dark){{{}}}"#, dark_css).into_boxed_str().into_boxed_bytes());
 
     let app = Router::new()
         .route("/", get(methods::index::handle))
@@ -70,6 +71,7 @@ async fn main() {
             )))),
         )
         .route("/highlight.css", get(static_css(css)))
+        .route("/highlight-dark.css", get(static_css(dark_css)))
         .fallback(methods::repo::service.into_service())
         .layer(layer_fn(LoggingMiddleware))
         .layer(Extension(Arc::new(Git::new(syntax_set))))

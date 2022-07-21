@@ -2,6 +2,18 @@
 @import 'diff';
 @import 'tables';
 @import 'code';
+@import 'colours';
+
+@media (prefers-color-scheme: dark) {
+  html {
+    background: #000;
+    color: $darkModeTextColour;
+  }
+
+  h2, h3 {
+    color: darken($darkModeHighlightColour, 20%);
+  }
+}
 
 body {
   font-family: sans-serif;
@@ -16,14 +28,26 @@ nav {
   margin-top: 2rem;
   border-bottom: solid 3px #ccc;
 
+  @media (prefers-color-scheme: dark) {
+    border-bottom-color: $darkModeHighlightColour;
+  }
+
   a {
     padding: 2px 0.75em;
     color: #777;
     font-size: 110%;
 
+    @media (prefers-color-scheme: dark) {
+      color: $darkModeHighlightColour;
+    }
+
     &.active {
       color: #000;
       background-color: #ccc;
+
+      @media (prefers-color-scheme: dark) {
+        background: $darkModeHighlightColour;
+      }
     }
   }
 }
@@ -32,6 +56,10 @@ main {
   padding: 2rem;
   margin: 0;
   border-bottom: solid 3px #ccc;
+
+  @media (prefers-color-scheme: dark) {
+    border-bottom-color: $darkModeHighlightColour;
+  }
 }
 
 footer {
@@ -39,14 +67,26 @@ footer {
   text-align: center;
   font-size: 80%;
   color: #ccc;
+
+  @media (prefers-color-scheme: dark) {
+    color: $darkModeTextColour;
+  }
 }
 
 a {
   text-decoration: none;
   color: blue;
 
+  @media (prefers-color-scheme: dark) {
+    color: darken($darkModeHighlightColour, 10%);
+  }
+
   &.no-style {
     color: inherit;
+
+    @media (prefers-color-scheme: dark) {
+      color: darken($darkModeHighlightColour, 10%);
+    }
   }
 
   &:hover {

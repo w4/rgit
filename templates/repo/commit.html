@@ -2,6 +2,7 @@
 
 {% block head %}
 <link rel="stylesheet" type="text/css" href="/highlight.css" />
+<link rel="stylesheet" type="text/css" href="/highlight-dark.css" />
 {% endblock %}
 
 {% block commit_nav_class %}active{% endblock %}
@@ -40,6 +41,6 @@
 <pre>{{ commit.body() }}</pre>
 
 <h3>Diff</h3>
-<pre>{{ commit.diff_stats|safe }}
+<pre class="diff">{{ commit.diff_stats|safe }}
 {{ commit.diff|safe }}</pre>
 {% endblock %}

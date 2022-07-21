@@ -4,6 +4,7 @@
 {% if let Some(readme) = readme %}
     {% if readme.0 == crate::git::ReadmeFormat::Markdown %}
         <link rel="stylesheet" type="text/css" href="/highlight.css" />
+        <link rel="stylesheet" type="text/css" href="/highlight-dark.css" />
     {% endif %}
 {% endif %}
 {% endblock %}

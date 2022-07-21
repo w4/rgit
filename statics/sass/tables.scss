@@ -1,4 +1,10 @@
+@import 'colours';
+
 table {
+  @media (prefers-color-scheme: dark) {
+    color: darken($darkModeHighlightColour, 20%);
+  }
+
   border-collapse: collapse;
 
   th {
@@ -12,8 +18,17 @@ table.repositories {
   a {
     color: black;
 
+    @media (prefers-color-scheme: dark) {
+      color: darken($darkModeHighlightColour, 15%);
+    }
+
     &:hover {
       color: #00f;
+
+      @media (prefers-color-scheme: dark) {
+        color: darken($darkModeHighlightColour, 15%);
+        text-decoration: underline;
+      }
     }
   }
 
@@ -21,6 +36,10 @@ table.repositories {
     tr {
       &:nth-child(odd) {
         background: #f7f7f7;
+
+        @media (prefers-color-scheme: dark) {
+          background: #111;
+        }
       }
 
       &.no-background {
@@ -37,7 +56,7 @@ table.repositories {
       }
 
       &.separator {
-        background: white !important;
+        background: none !important;
         height: 1rem;
       }
     }
@@ -50,6 +69,10 @@ table.repositories {
   .nested-tree {
     color: blue !important;
     font-weight: bold;
+
+    @media (prefers-color-scheme: dark) {
+      color: $darkModeTextColour !important;
+    }
   }
 }
 

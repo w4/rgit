@@ -55,11 +55,20 @@ async fn main() {
 
     let theme = bat_assets.get_theme("GitHub");
     let css = syntect::html::css_for_theme_with_class_style(theme, ClassStyle::Spaced).unwrap();
-    let css = Box::leak(format!(r#"@media (prefers-color-scheme: light){{{}}}"#, css).into_boxed_str().into_boxed_bytes());
+    let css = Box::leak(
+        format!(r#"@media (prefers-color-scheme: light){{{}}}"#, css)
+            .into_boxed_str()
+            .into_boxed_bytes(),
+    );
 
     let dark_theme = bat_assets.get_theme("TwoDark");
-    let dark_css = syntect::html::css_for_theme_with_class_style(dark_theme, ClassStyle::Spaced).unwrap();
-    let dark_css = Box::leak(format!(r#"@media (prefers-color-scheme: dark){{{}}}"#, dark_css).into_boxed_str().into_boxed_bytes());
+    let dark_css =
+        syntect::html::css_for_theme_with_class_style(dark_theme, ClassStyle::Spaced).unwrap();
+    let dark_css = Box::leak(
+        format!(r#"@media (prefers-color-scheme: dark){{{}}}"#, dark_css)
+            .into_boxed_str()
+            .into_boxed_bytes(),
+    );
 
     let app = Router::new()
         .route("/", get(methods::index::handle))

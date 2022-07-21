@@ -21,6 +21,7 @@ mod git;
 mod git_cgi;
 mod layers;
 mod methods;
+mod syntax_highlight;
 
 const CRATE_VERSION: &str = clap::crate_version!();
 

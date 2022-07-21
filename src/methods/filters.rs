@@ -16,3 +16,11 @@ pub fn hex(s: &[u8]) -> Result<String, askama::Error> {
 pub fn md5(s: &str) -> Result<String, askama::Error> {
     Ok(hex::encode(&md5::compute(s).0))
 }
+
+#[allow(dead_code)]
+pub fn md(md: &str) -> Result<String, askama::Error> {
+    Ok(comrak::markdown_to_html(
+        md,
+        &comrak::ComrakOptions::default(),
+    ))
+}

@@ -1,6 +1,10 @@
+use std::ffi::OsStr;
+use std::path::Path;
 use std::{borrow::Cow, fmt::Write, path::PathBuf, sync::Arc, time::Duration};
 
+use crate::syntax_highlight::ComrakSyntectAdapter;
 use bytes::{Bytes, BytesMut};
+use comrak::{ComrakOptions, ComrakPlugins};
 use git2::{
     BranchType, DiffFormat, DiffLineType, DiffOptions, DiffStatsFormat, ObjectType, Oid, Signature,
 };
@@ -14,7 +18,7 @@ use tracing::instrument;
 
 pub struct Git {
     commits: Cache<Oid, Arc<Commit>>,
-    readme_cache: Cache<PathBuf, Option<Arc<str>>>,
+    readme_cache: Cache<PathBuf, Option<(ReadmeFormat, Arc<str>)>>,
     refs: Cache<PathBuf, Arc<Refs>>,
     syntax_set: SyntaxSet,
 }
@@ -230,7 +234,7 @@ impl OpenRepository {
     }
 
     #[instrument(skip(self))]
-    pub async fn readme(self: Arc<Self>) -> Option<Arc<str>> {
+    pub async fn readme(self: Arc<Self>) -> Option<(ReadmeFormat, Arc<str>)> {
         const README_FILES: &[&str] = &["README.md", "README", "README.txt"];
 
         let git = self.git.clone();
@@ -244,19 +248,38 @@ impl OpenRepository {
                     let commit = head.peel_to_commit().unwrap();
                     let tree = commit.tree().unwrap();
 
-                    let blob = README_FILES
-                        .iter()
-                        .map(|file| tree.get_name(file))
-                        .next()
-                        .flatten()?
-                        .to_object(&repo)
-                        .unwrap()
-                        .into_blob()
-                        .unwrap();
+                    for name in README_FILES {
+                        let tree_entry = if let Some(file) = tree.get_name(name) {
+                            file
+                        } else {
+                            continue;
+                        };
 
-                    Some(Arc::from(
-                        String::from_utf8(blob.content().to_vec()).unwrap(),
-                    ))
+                        let blob = if let Some(blob) = tree_entry
+                            .to_object(&repo)
+                            .ok()
+                            .and_then(|v| v.into_blob().ok())
+                        {
+                            blob
+                        } else {
+                            continue;
+                        };
+
+                        let content = if let Ok(content) = std::str::from_utf8(blob.content()) {
+                            content
+                        } else {
+                            continue;
+                        };
+
+                        if Path::new(name).extension().and_then(OsStr::to_str) == Some("md") {
+                            let value = parse_and_transform_markdown(content, &self.git.syntax_set);
+                            return Some((ReadmeFormat::Markdown, Arc::from(value)));
+                        }
+
+                        return Some((ReadmeFormat::Plaintext, Arc::from(content)));
+                    }
+
+                    None
                 })
                 .await
                 .unwrap()
@@ -311,6 +334,21 @@ impl OpenRepository {
             })
             .await
     }
+}
+
+fn parse_and_transform_markdown(s: &str, syntax_set: &SyntaxSet) -> String {
+    let mut plugins = ComrakPlugins::default();
+
+    let highlighter = ComrakSyntectAdapter { syntax_set };
+    plugins.render.codefence_syntax_highlighter = Some(&highlighter);
+
+    comrak::markdown_to_html_with_plugins(s, &ComrakOptions::default(), &plugins)
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum ReadmeFormat {
+    Markdown,
+    Plaintext,
 }
 
 pub enum PathDestination {

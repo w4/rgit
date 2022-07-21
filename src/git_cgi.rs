@@ -4,6 +4,7 @@ use axum::http::HeaderValue;
 use axum::response::Response;
 use std::str::FromStr;
 
+// https://en.wikipedia.org/wiki/Common_Gateway_Interface
 pub fn cgi_to_response(buffer: &[u8]) -> Response {
     let mut headers = [httparse::EMPTY_HEADER; 10];
     let (body_offset, headers) = httparse::parse_headers(buffer, &mut headers)

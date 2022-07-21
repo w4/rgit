@@ -25,7 +25,7 @@ use tower::{util::BoxCloneService, Service};
 use yoke::Yoke;
 
 use super::filters;
-use crate::git::{DetailedTag, FileWithContent, PathDestination, Refs, TreeItem};
+use crate::git::{DetailedTag, FileWithContent, PathDestination, ReadmeFormat, Refs, TreeItem};
 use crate::{git::Commit, into_response, layers::UnwrapInfallible, Git};
 
 #[derive(Clone)]
@@ -295,7 +295,7 @@ pub async fn handle_refs(
 #[template(path = "repo/about.html")]
 pub struct AboutView {
     repo: Repository,
-    readme: Option<Arc<str>>,
+    readme: Option<(ReadmeFormat, Arc<str>)>,
 }
 
 pub async fn handle_about(

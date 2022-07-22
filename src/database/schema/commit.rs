@@ -85,7 +85,9 @@ impl<'a, 'de: 'a> Deserialize<'de> for CommitHash<'a> {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Author<'a> {
+    #[serde(borrow)]
     pub name: Cow<'a, str>,
+    #[serde(borrow)]
     pub email: Cow<'a, str>,
     pub time: OffsetDateTime,
 }

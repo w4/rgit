@@ -5,8 +5,8 @@
 
 {% block content %}
 <table class="repositories">
-    {% call refs::branch_table(refs.branch.iter().take(10)) %}
-    {% if refs.branch.len() > 10 %}
+    {% call refs::branch_table(refs.heads.iter().take(10)) %}
+    {% if refs.heads.len() > 10 %}
     <tbody>
     <tr class="no-background">
         <td><a href="/{{ repo.display() }}/refs" class="no-style">[...]</a></td>
@@ -26,8 +26,8 @@
     </tr>
     </tbody>
 
-    {% call refs::tag_table(refs.tag.iter().take(10)) %}
-    {% if refs.tag.len() > 10 %}
+    {% call refs::tag_table(refs.tags.iter().take(10)) %}
+    {% if refs.tags.len() > 10 %}
     <tbody>
     <tr class="no-background">
         <td><a href="/{{ repo.display() }}/refs" class="no-style">[...]</a></td>

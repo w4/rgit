@@ -1,4 +1,5 @@
 use anyhow::Context;
+use std::collections::BTreeMap;
 use std::{
     fmt::{Debug, Display, Formatter},
     io::Write,
@@ -27,7 +28,9 @@ use tower::{util::BoxCloneService, Service};
 use yoke::Yoke;
 
 use super::filters;
-use crate::git::{DetailedTag, FileWithContent, PathDestination, ReadmeFormat, Refs, TreeItem};
+use crate::database::schema::commit::YokedCommit;
+use crate::database::schema::tag::YokedTag;
+use crate::git::{DetailedTag, FileWithContent, PathDestination, ReadmeFormat, TreeItem};
 use crate::{git::Commit, into_response, layers::UnwrapInfallible, Git};
 
 #[derive(Clone)]
@@ -159,32 +162,48 @@ where
         .into_response()
 }
 
+pub struct Refs {
+    heads: BTreeMap<String, YokedCommit>,
+    tags: Vec<(String, YokedTag)>,
+}
+
 #[derive(Template)]
 #[template(path = "repo/summary.html")]
 pub struct SummaryView<'a> {
     repo: Repository,
-    refs: Arc<Refs>,
+    refs: Refs,
     commit_list: Vec<&'a crate::database::schema::commit::Commit<'a>>,
 }
 
 pub async fn handle_summary(
     Extension(repo): Extension<Repository>,
-    Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
-    Extension(git): Extension<Arc<Git>>,
     Extension(db): Extension<sled::Db>,
 ) -> Result<Response> {
-    let open_repo = git.repo(repository_path).await?;
-    let refs = open_repo.refs().await?;
-
     let repository = crate::database::schema::repository::Repository::open(&db, &*repo)?
         .context("Repository does not exist")?;
     let commit_tree = repository.get().commit_tree(&db, "refs/heads/master")?;
     let commits = commit_tree.fetch_latest(11, 0).await;
     let commit_list = commits.iter().map(Yoke::get).collect();
 
+    let mut heads = BTreeMap::new();
+    for head in repository.get().heads(&db) {
+        let commit_tree = repository.get().commit_tree(&db, &head)?;
+        let name = head.strip_prefix("refs/heads/");
+
+        if let (Some(name), Some(commit)) = (name, commit_tree.fetch_latest_one()) {
+            heads.insert(name.to_string(), commit);
+        }
+    }
+
+    let tags = repository
+        .get()
+        .tag_tree(&db)
+        .context("Failed to fetch indexed tags")?
+        .fetch_all();
+
     Ok(into_response(&SummaryView {
         repo,
-        refs,
+        refs: Refs { heads, tags },
         commit_list,
     }))
 }
@@ -309,18 +328,36 @@ pub async fn handle_git_upload_pack(
 #[template(path = "repo/refs.html")]
 pub struct RefsView {
     repo: Repository,
-    refs: Arc<Refs>,
+    refs: Refs,
 }
 
 pub async fn handle_refs(
     Extension(repo): Extension<Repository>,
-    Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
-    Extension(git): Extension<Arc<Git>>,
+    Extension(db): Extension<sled::Db>,
 ) -> Result<Response> {
-    let open_repo = git.repo(repository_path).await?;
-    let refs = open_repo.refs().await?;
+    let repository = crate::database::schema::repository::Repository::open(&db, &*repo)?
+        .context("Repository does not exist")?;
 
-    Ok(into_response(&RefsView { repo, refs }))
+    let mut heads = BTreeMap::new();
+    for head in repository.get().heads(&db) {
+        let commit_tree = repository.get().commit_tree(&db, &head)?;
+        let name = head.strip_prefix("refs/heads/");
+
+        if let (Some(name), Some(commit)) = (name, commit_tree.fetch_latest_one()) {
+            heads.insert(name.to_string(), commit);
+        }
+    }
+
+    let tags = repository
+        .get()
+        .tag_tree(&db)
+        .context("Failed to fetch indexed tags")?
+        .fetch_all();
+
+    Ok(into_response(&RefsView {
+        repo,
+        refs: Refs { heads, tags },
+    }))
 }
 
 #[derive(Template)]

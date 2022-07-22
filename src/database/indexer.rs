@@ -1,4 +1,5 @@
 use git2::Sort;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use time::OffsetDateTime;
 use tracing::{info, info_span};
@@ -6,12 +7,25 @@ use tracing::{info, info_span};
 use crate::database::schema::{
     commit::Commit,
     repository::{Repository, RepositoryId},
+    tag::Tag,
 };
 
 pub fn run(db: &sled::Db) {
+    let span = info_span!("index_update");
+    let _entered = span.enter();
+
+    info!("Starting index update");
+
     let scan_path = Path::new("/Users/jordan/Code/test-git");
     update_repository_metadata(scan_path, db);
     update_repository_reflog(scan_path, db);
+    update_repository_tags(scan_path, db);
+
+    info!("Flushing to disk");
+
+    db.flush().unwrap();
+
+    info!("Finished index update");
 }
 
 fn update_repository_metadata(scan_path: &Path, db: &sled::Db) {
@@ -52,7 +66,7 @@ fn update_repository_reflog(scan_path: &Path, db: &sled::Db) {
             }
 
             let span = info_span!(
-                "index_update",
+                "branch_index_update",
                 reference = reference_name.as_ref(),
                 repository = relative_path
             );
@@ -94,6 +108,56 @@ fn update_repository_reflog(scan_path: &Path, db: &sled::Db) {
             for to_remove in (i + 1)..(i + 100) {
                 commit_tree.remove(&to_remove.to_be_bytes()).unwrap();
             }
+        }
+    }
+}
+
+fn update_repository_tags(scan_path: &Path, db: &sled::Db) {
+    for (relative_path, db_repository) in Repository::fetch_all(db).unwrap() {
+        let git_repository = git2::Repository::open(scan_path.join(&relative_path)).unwrap();
+
+        let tag_tree = db_repository.get().tag_tree(db).unwrap();
+
+        let git_tags: HashSet<_> = git_repository
+            .references()
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|v| v.name_bytes().starts_with(b"refs/tags/"))
+            .map(|v| String::from_utf8_lossy(v.name_bytes()).into_owned())
+            .collect();
+        let indexed_tags: HashSet<String> = tag_tree.list().into_iter().collect();
+
+        // insert any git tags that are missing from the index
+        for tag_name in git_tags.difference(&indexed_tags) {
+            let span = info_span!(
+                "tag_index_update",
+                reference = tag_name,
+                repository = relative_path
+            );
+            let _entered = span.enter();
+
+            let reference = git_repository.find_reference(tag_name).unwrap();
+
+            if let Ok(tag) = reference.peel_to_tag() {
+                info!("Inserting newly discovered tag to index");
+
+                Tag::new(tag.tagger().as_ref()).insert(&tag_tree, tag_name);
+            }
+        }
+
+        // remove any extra tags that the index has
+        // TODO: this also needs to check peel_to_tag
+        for tag_name in indexed_tags.difference(&git_tags) {
+            let span = info_span!(
+                "tag_index_update",
+                reference = tag_name,
+                repository = relative_path
+            );
+            let _entered = span.enter();
+
+            info!("Removing stale tag from index");
+
+            tag_tree.remove(tag_name);
         }
     }
 }

@@ -1,7 +1,9 @@
 use crate::database::schema::commit::CommitTree;
 use crate::database::schema::prefixes::TreePrefix;
+use crate::database::schema::tag::TagTree;
 use crate::database::schema::Yoked;
 use anyhow::{Context, Result};
+use nom::AsBytes;
 use serde::{Deserialize, Serialize};
 use sled::IVec;
 use std::borrow::Cow;
@@ -84,6 +86,27 @@ impl Repository<'_> {
             .context("Failed to open commit tree")?;
 
         Ok(CommitTree::new(tree))
+    }
+
+    pub fn tag_tree(&self, database: &sled::Db) -> Result<TagTree> {
+        let tree = database
+            .open_tree(TreePrefix::tag_id(self.id))
+            .context("Failed to open tag tree")?;
+
+        Ok(TagTree::new(tree))
+    }
+
+    pub fn heads(&self, database: &sled::Db) -> Vec<String> {
+        let prefix = TreePrefix::commit_id(self.id, "");
+
+        database
+            .tree_names()
+            .into_iter()
+            .filter_map(|v| {
+                v.strip_prefix(prefix.as_bytes())
+                    .map(|v| String::from_utf8_lossy(v).into_owned())
+            })
+            .collect()
     }
 }
 

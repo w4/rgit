@@ -5,7 +5,7 @@
 
 {% block content %}
 <table class="repositories">
-    {% call refs::branch_table(refs.branch) %}
+    {% call refs::branch_table(refs.heads) %}
 
     <tbody>
     <tr class="separator">
@@ -16,6 +16,6 @@
     </tr>
     </tbody>
 
-    {% call refs::tag_table(refs.tag) %}
+    {% call refs::tag_table(refs.tags) %}
 </table>
 {% endblock %}

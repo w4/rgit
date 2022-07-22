@@ -20,7 +20,6 @@ use tracing::instrument;
 pub struct Git {
     commits: Cache<Oid, Arc<Commit>>,
     readme_cache: Cache<PathBuf, Option<(ReadmeFormat, Arc<str>)>>,
-    refs: Cache<PathBuf, Arc<Refs>>,
     syntax_set: SyntaxSet,
 }
 
@@ -33,10 +32,6 @@ impl Git {
                 .max_capacity(100)
                 .build(),
             readme_cache: Cache::builder()
-                .time_to_live(Duration::from_secs(10))
-                .max_capacity(100)
-                .build(),
-            refs: Cache::builder()
                 .time_to_live(Duration::from_secs(10))
                 .max_capacity(100)
                 .build(),
@@ -203,56 +198,6 @@ impl OpenRepository {
     }
 
     #[instrument(skip(self))]
-    pub async fn refs(self: Arc<Self>) -> Result<Arc<Refs>, Arc<anyhow::Error>> {
-        let git = self.git.clone();
-
-        git.refs
-            .try_get_with(self.cache_key.clone(), async move {
-                tokio::task::spawn_blocking(move || {
-                    let repo = self.repo.lock();
-
-                    let ref_iter = repo.references().context("Couldn't get list of references for repository")?;
-
-                    let mut built_refs = Refs::default();
-
-                    for ref_ in ref_iter {
-                        let ref_ = ref_?;
-
-                        if ref_.is_branch() {
-                            let commit = ref_.peel_to_commit().context("Reference is apparently a branch but I couldn't get to the HEAD of it")?;
-
-                            built_refs.branch.push(Branch {
-                                name: String::from_utf8_lossy(ref_.shorthand_bytes()).into_owned(),
-                                commit: commit.try_into()?,
-                            });
-                        } else if ref_.is_tag() {
-                            if let Ok(tag) = ref_.peel_to_tag() {
-                                built_refs.tag.push(Tag {
-                                    name: String::from_utf8_lossy(ref_.shorthand_bytes()).into_owned(),
-                                    tagger: tag.tagger().map(TryInto::try_into).transpose()?,
-                                });
-                            }
-                        }
-                    }
-
-                    built_refs.branch.sort_unstable_by(|one, two| {
-                        two.commit.committer.time.cmp(&one.commit.committer.time)
-                    });
-                    built_refs.tag.sort_unstable_by(|one, two| {
-                        let one_tagger = one.tagger.as_ref().map(|v| v.time);
-                        let two_tagger = two.tagger.as_ref().map(|v| v.time);
-                        two_tagger.cmp(&one_tagger)
-                    });
-
-                    Ok(Arc::new(built_refs))
-                })
-                .await
-                .context("Failed to join Tokio task")?
-            })
-            .await
-    }
-
-    #[instrument(skip(self))]
     pub async fn readme(
         self: Arc<Self>,
     ) -> Result<Option<(ReadmeFormat, Arc<str>)>, Arc<anyhow::Error>> {
@@ -411,12 +356,6 @@ pub struct FileWithContent {
     pub content: String,
 }
 
-#[derive(Debug, Default)]
-pub struct Refs {
-    pub branch: Vec<Branch>,
-    pub tag: Vec<Tag>,
-}
-
 #[derive(Debug)]
 pub struct Branch {
     pub name: String,
@@ -443,16 +382,9 @@ pub struct DetailedTag {
 }
 
 #[derive(Debug)]
-pub struct Tag {
-    pub name: String,
-    pub tagger: Option<CommitUser>,
-}
-
-#[derive(Debug)]
 pub struct CommitUser {
     name: String,
     email: String,
-    email_md5: String,
     time: OffsetDateTime,
 }
 
@@ -463,7 +395,6 @@ impl TryFrom<Signature<'_>> for CommitUser {
         Ok(CommitUser {
             name: String::from_utf8_lossy(v.name_bytes()).into_owned(),
             email: String::from_utf8_lossy(v.email_bytes()).into_owned(),
-            email_md5: format!("{:x}", md5::compute(v.email_bytes())),
             time: OffsetDateTime::from_unix_timestamp(v.when().seconds())?,
         })
     }
@@ -476,10 +407,6 @@ impl CommitUser {
 
     pub fn email(&self) -> &str {
         &self.email
-    }
-
-    pub fn email_md5(&self) -> &str {
-        &self.email_md5
     }
 
     pub fn time(&self) -> OffsetDateTime {

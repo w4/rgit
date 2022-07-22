@@ -5,7 +5,7 @@ use std::path::Path;
 pub enum TreePrefix {
     Repository = 0,
     Commit = 100,
-    _Tag = 101,
+    Tag = 101,
 }
 
 impl TreePrefix {
@@ -31,6 +31,16 @@ impl TreePrefix {
         prefixed.push(TreePrefix::Commit as u8);
         prefixed.extend_from_slice(&repository.to_ne_bytes());
         prefixed.extend_from_slice(reference);
+
+        prefixed
+    }
+
+    pub fn tag_id(repository: RepositoryId) -> Vec<u8> {
+        let mut prefixed = Vec::with_capacity(
+            std::mem::size_of::<TreePrefix>() + std::mem::size_of::<RepositoryId>(),
+        );
+        prefixed.push(TreePrefix::Tag as u8);
+        prefixed.extend_from_slice(&repository.to_ne_bytes());
 
         prefixed
     }

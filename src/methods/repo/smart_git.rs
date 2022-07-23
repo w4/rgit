@@ -12,8 +12,10 @@ use axum::{
 use futures::TryStreamExt;
 use httparse::Status;
 use tokio_util::io::StreamReader;
+use tracing::warn;
 
 use crate::methods::repo::{Repository, RepositoryPath, Result};
+use crate::StatusCode;
 
 #[allow(clippy::unused_async)]
 pub async fn handle(
@@ -40,6 +42,7 @@ pub async fn handle(
         .env("QUERY_STRING", uri.query().unwrap_or(""))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .context("Failed to spawn git http-backend")?;
 
@@ -58,6 +61,10 @@ pub async fn handle(
         .await
         .context("Failed to read git http-backend response")?;
     let resp = cgi_to_response(&out.stdout)?;
+
+    if out.stderr.len() > 0 {
+        warn!("Git returned an error: `{}`", String::from_utf8_lossy(&out.stderr));
+    }
 
     Ok(resp)
 }
@@ -91,6 +98,14 @@ pub fn cgi_to_response(buffer: &[u8]) -> Result<Response, anyhow::Error> {
             HeaderValue::from_bytes(header.value)
                 .context("Failed to parse header value from Git over CGI")?,
         );
+    }
+
+    if let Some(status) = response.headers_mut().remove("Status").filter(|s| s.len() >= 3) {
+        let status = &status.as_ref()[..3];
+
+        if let Ok(status) = StatusCode::from_bytes(status) {
+            *response.status_mut() = status;
+        }
     }
 
     Ok(response)

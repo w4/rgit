@@ -62,7 +62,6 @@ where
             user_agent: req.headers().get(axum::http::header::USER_AGENT).cloned(),
         };
 
-        // this is infallible because of the type of S::Error
         futures::future::join(
             self.0.call(req).instrument(span),
             futures::future::ready(log_message),

@@ -17,25 +17,27 @@
     </tbody>
     {% endif %}
 
-    <tbody>
-    <tr class="separator">
-        <td></td>
-        <td></td>
-        <td></td>
-        <td></td>
-    </tr>
-    </tbody>
+    {% if !refs.tags.is_empty() %}
+        <tbody>
+        <tr class="separator">
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+        </tr>
+        </tbody>
 
-    {% call refs::tag_table(refs.tags.iter().take(10)) %}
-    {% if refs.tags.len() > 10 %}
-    <tbody>
-    <tr class="no-background">
-        <td><a href="/{{ repo.display() }}/refs" class="no-style">[...]</a></td>
-        <td></td>
-        <td></td>
-        <td></td>
-    </tr>
-    </tbody>
+        {% call refs::tag_table(refs.tags.iter().take(10)) %}
+        {% if refs.tags.len() > 10 %}
+        <tbody>
+        <tr class="no-background">
+            <td><a href="/{{ repo.display() }}/refs" class="no-style">[...]</a></td>
+            <td></td>
+            <td></td>
+            <td></td>
+        </tr>
+        </tbody>
+        {% endif %}
     {% endif %}
 
     <tbody>

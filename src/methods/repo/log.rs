@@ -75,7 +75,7 @@ pub async fn get_branch_commits(
 
     for branch in DEFAULT_BRANCHES {
         let commit_tree = repository.get().commit_tree(database, branch)?;
-        let commits = commit_tree.fetch_latest(amount, 0).await;
+        let commits = commit_tree.fetch_latest(amount, offset).await;
 
         if !commits.is_empty() {
             return Ok(commits);

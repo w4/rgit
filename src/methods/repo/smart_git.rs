@@ -1,53 +1,97 @@
-use std::{io::Write, process::Stdio};
+use std::{io::ErrorKind, path::PathBuf, process::Stdio, str::FromStr};
 
-use axum::{extract::Query, response::Response, Extension};
-use bytes::Bytes;
-use serde::Deserialize;
+use anyhow::{bail, Context};
+use axum::{
+    body::{boxed, Body},
+    extract::BodyStream,
+    headers::{ContentType, HeaderName, HeaderValue},
+    http::{Method, Uri},
+    response::Response,
+    Extension, TypedHeader,
+};
+use futures::TryStreamExt;
+use httparse::Status;
+use tokio_util::io::StreamReader;
 
-use crate::methods::repo::{RepositoryPath, Result};
-
-#[derive(Deserialize)]
-pub struct UriQuery {
-    service: String,
-}
-
-#[allow(clippy::unused_async)]
-pub async fn handle_info_refs(
-    Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
-    Query(query): Query<UriQuery>,
-) -> Result<Response> {
-    // todo: tokio command
-    let out = std::process::Command::new("git")
-        .arg("http-backend")
-        .env("REQUEST_METHOD", "GET")
-        .env("PATH_INFO", "/info/refs")
-        .env("GIT_PROJECT_ROOT", repository_path)
-        .env("QUERY_STRING", format!("service={}", query.service))
-        .output()
-        .unwrap();
-
-    Ok(crate::git_cgi::cgi_to_response(&out.stdout)?)
-}
+use crate::methods::repo::{Repository, RepositoryPath, Result};
 
 #[allow(clippy::unused_async)]
-pub async fn handle_git_upload_pack(
+pub async fn handle(
     Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
-    body: Bytes,
+    Extension(Repository(repository)): Extension<Repository>,
+    method: Method,
+    uri: Uri,
+    body: BodyStream,
+    content_type: Option<TypedHeader<ContentType>>,
 ) -> Result<Response> {
-    // todo: tokio command
-    let mut child = std::process::Command::new("git")
+    let path = extract_path(&uri, &repository)?;
+
+    let mut command = tokio::process::Command::new("git");
+
+    if let Some(content_type) = content_type {
+        command.env("CONTENT_TYPE", content_type.0.to_string());
+    }
+
+    let mut child = command
         .arg("http-backend")
-        // todo: read all this from request
-        .env("REQUEST_METHOD", "POST")
-        .env("CONTENT_TYPE", "application/x-git-upload-pack-request")
-        .env("PATH_INFO", "/git-upload-pack")
+        .env("REQUEST_METHOD", method.as_str())
+        .env("PATH_INFO", path)
         .env("GIT_PROJECT_ROOT", repository_path)
-        .stdout(Stdio::piped())
+        .env("QUERY_STRING", uri.query().unwrap_or(""))
         .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
         .spawn()
-        .unwrap();
-    child.stdin.as_mut().unwrap().write_all(&body).unwrap();
-    let out = child.wait_with_output().unwrap();
+        .context("Failed to spawn git http-backend")?;
 
-    Ok(crate::git_cgi::cgi_to_response(&out.stdout)?)
+    {
+        let mut body =
+            StreamReader::new(body.map_err(|e| std::io::Error::new(ErrorKind::Other, e)));
+        let mut stdin = child.stdin.take().context("Stdin already taken")?;
+
+        tokio::io::copy(&mut body, &mut stdin)
+            .await
+            .context("Failed to copy bytes from request to command stdin")?;
+    }
+
+    let out = child
+        .wait_with_output()
+        .await
+        .context("Failed to read git http-backend response")?;
+    let resp = cgi_to_response(&out.stdout)?;
+
+    Ok(resp)
+}
+
+fn extract_path<'a>(uri: &'a Uri, repository: &PathBuf) -> Result<&'a str> {
+    let path = uri.path();
+    let path = path.strip_prefix("/").unwrap_or(path);
+
+    if let Some(prefix) = repository.as_os_str().to_str() {
+        Ok(path.strip_prefix(prefix).unwrap_or(path))
+    } else {
+        Err(anyhow::Error::msg("Repository name contains invalid bytes").into())
+    }
+}
+
+// https://en.wikipedia.org/wiki/Common_Gateway_Interface
+pub fn cgi_to_response(buffer: &[u8]) -> Result<Response, anyhow::Error> {
+    let mut headers = [httparse::EMPTY_HEADER; 10];
+    let (body_offset, headers) = match httparse::parse_headers(buffer, &mut headers)? {
+        Status::Complete(v) => v,
+        Status::Partial => bail!("Git returned a partial response over CGI"),
+    };
+
+    let mut response = Response::new(boxed(Body::from(buffer[body_offset..].to_vec())));
+
+    // TODO: extract status header
+    for header in headers {
+        response.headers_mut().insert(
+            HeaderName::from_str(header.name)
+                .context("Failed to parse header name from Git over CGI")?,
+            HeaderValue::from_bytes(header.value)
+                .context("Failed to parse header value from Git over CGI")?,
+        );
+    }
+
+    Ok(response)
 }

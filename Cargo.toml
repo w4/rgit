@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 askama = "0.11"
 anyhow = "1.0"
-axum = "0.5"
+axum = { version = "0.5", features = ["headers"] }
 axum-macros = "0.2"
 bat = { version = "0.21", default-features = false, features = ["build-assets"] }
 bytes = "1.1"
@@ -30,6 +30,7 @@ sled = { version = "0.34", features = ["compression"] }
 time = { version = "0.3", features = ["serde"] }
 timeago = "0.3"
 tokio = { version = "1.19", features = ["full"] }
+tokio-util = { version = "0.7.3", features = ["io"] }
 tower = "0.4"
 tower-service = "0.3"
 tower-layer = "0.3"

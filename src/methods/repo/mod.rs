@@ -31,7 +31,7 @@ use self::{
     diff::{handle as handle_diff, handle_plain as handle_patch},
     log::handle as handle_log,
     refs::handle as handle_refs,
-    smart_git::{handle_git_upload_pack, handle_info_refs},
+    smart_git::handle as handle_smart_git,
     summary::handle as handle_summary,
     tag::handle as handle_tag,
     tree::handle as handle_tree,
@@ -47,6 +47,7 @@ pub async fn service<ReqBody>(mut request: Request<ReqBody>) -> Response
 where
     ReqBody: HttpBody + Send + Debug + 'static,
     <ReqBody as HttpBody>::Data: Send + Sync,
+    bytes::Bytes: From<ReqBody::Data>,
     <ReqBody as HttpBody>::Error: std::error::Error + Send + Sync,
 {
     let mut uri_parts: Vec<&str> = request
@@ -71,9 +72,9 @@ where
         // TODO: GIT_PROTOCOL
         Some("refs") if uri_parts.last() == Some(&"info") => {
             uri_parts.pop();
-            h!(handle_info_refs)
+            h!(handle_smart_git)
         }
-        Some("git-upload-pack") => h!(handle_git_upload_pack),
+        Some("git-upload-pack") => h!(handle_smart_git),
         Some("refs") => h!(handle_refs),
         Some("log") => h!(handle_log),
         Some("tree") => h!(handle_tree),
@@ -148,7 +149,7 @@ impl Deref for RepositoryPath {
     }
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 pub struct Error(anyhow::Error);
 

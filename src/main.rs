@@ -21,7 +21,6 @@ use crate::{git::Git, layers::logger::LoggingMiddleware};
 
 mod database;
 mod git;
-mod git_cgi;
 mod layers;
 mod methods;
 mod syntax_highlight;

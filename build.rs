@@ -1,8 +1,9 @@
-use anyhow::Context;
 use std::{
     io::Write,
     path::{Path, PathBuf},
 };
+
+use anyhow::Context;
 
 #[derive(Copy, Clone)]
 pub struct Paths<'a> {

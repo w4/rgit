@@ -1,8 +1,12 @@
-use std::ffi::OsStr;
-use std::path::Path;
-use std::{borrow::Cow, fmt::Write, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    borrow::Cow,
+    ffi::OsStr,
+    fmt::Write,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
-use crate::syntax_highlight::ComrakSyntectAdapter;
 use anyhow::{Context, Result};
 use bytes::{Bytes, BytesMut};
 use comrak::{ComrakOptions, ComrakPlugins};
@@ -11,11 +15,15 @@ use git2::{
 };
 use moka::future::Cache;
 use parking_lot::Mutex;
-use syntect::html::{ClassStyle, ClassedHTMLGenerator};
-use syntect::parsing::SyntaxSet;
-use syntect::util::LinesWithEndings;
+use syntect::{
+    html::{ClassStyle, ClassedHTMLGenerator},
+    parsing::SyntaxSet,
+    util::LinesWithEndings,
+};
 use time::OffsetDateTime;
 use tracing::instrument;
+
+use crate::syntax_highlight::ComrakSyntectAdapter;
 
 pub struct Git {
     commits: Cache<Oid, Arc<Commit>>,
@@ -109,8 +117,7 @@ impl OpenRepository {
                     let extension = path
                         .extension()
                         .or_else(|| path.file_name())
-                        .map(|v| v.to_string_lossy())
-                        .unwrap_or_else(|| Cow::Borrowed(""));
+                        .map_or_else(|| Cow::Borrowed(""), OsStr::to_string_lossy);
                     let content = format_file(blob.content(), &extension, &self.git.syntax_set)?;
 
                     return Ok(PathDestination::File(FileWithContent {
@@ -187,8 +194,7 @@ impl OpenRepository {
                 tagger: tag.tagger().map(TryInto::try_into).transpose()?,
                 message: tag
                     .message_bytes()
-                    .map(String::from_utf8_lossy)
-                    .unwrap_or_else(|| Cow::Borrowed(""))
+                    .map_or_else(|| Cow::Borrowed(""), String::from_utf8_lossy)
                     .into_owned(),
                 tagged_object,
             })
@@ -440,13 +446,11 @@ impl TryFrom<git2::Commit<'_>> for Commit {
             parents: commit.parent_ids().map(|v| v.to_string()).collect(),
             summary: commit
                 .summary_bytes()
-                .map(String::from_utf8_lossy)
-                .unwrap_or_else(|| Cow::Borrowed(""))
+                .map_or_else(|| Cow::Borrowed(""), String::from_utf8_lossy)
                 .into_owned(),
             body: commit
                 .body_bytes()
-                .map(String::from_utf8_lossy)
-                .unwrap_or_else(|| Cow::Borrowed(""))
+                .map_or_else(|| Cow::Borrowed(""), String::from_utf8_lossy)
                 .into_owned(),
             diff_stats: String::with_capacity(0),
             diff: String::with_capacity(0),
@@ -559,8 +563,7 @@ fn format_diff(diff: &git2::Diff<'_>, syntax_set: &SyntaxSet) -> Result<String> 
             if let Some(path) = delta.new_file().path() {
                 path.extension()
                     .or_else(|| path.file_name())
-                    .map(|v| v.to_string_lossy())
-                    .unwrap_or_else(|| Cow::Borrowed(""))
+                    .map_or_else(|| Cow::Borrowed(""), OsStr::to_string_lossy)
             } else {
                 Cow::Borrowed("")
             }
@@ -572,7 +575,7 @@ fn format_diff(diff: &git2::Diff<'_>, syntax_set: &SyntaxSet) -> Result<String> 
             .unwrap_or_else(|| syntax_set.find_syntax_plain_text());
         let mut html_generator =
             ClassedHTMLGenerator::new_with_class_style(syntax, syntax_set, ClassStyle::Spaced);
-        let _ = html_generator.parse_html_for_line_which_includes_newline(&line);
+        let _res = html_generator.parse_html_for_line_which_includes_newline(&line);
         if let Some(class) = class {
             let _ = write!(diff_output, r#"<span class="diff-{class}">"#);
         }

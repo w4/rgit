@@ -1,11 +1,11 @@
-use crate::database::schema::commit::Author;
-use crate::database::schema::Yoked;
+use std::{collections::HashSet, ops::Deref};
+
 use git2::Signature;
 use serde::{Deserialize, Serialize};
 use sled::IVec;
-use std::collections::HashSet;
-use std::ops::Deref;
 use yoke::{Yoke, Yokeable};
+
+use crate::database::schema::{commit::Author, Yoked};
 
 #[derive(Serialize, Deserialize, Debug, Yokeable)]
 pub struct Tag<'a> {

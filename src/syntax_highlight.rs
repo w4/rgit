@@ -1,8 +1,11 @@
-use comrak::adapters::SyntaxHighlighterAdapter;
 use std::collections::HashMap;
-use syntect::html::{ClassStyle, ClassedHTMLGenerator};
-use syntect::parsing::SyntaxSet;
-use syntect::util::LinesWithEndings;
+
+use comrak::adapters::SyntaxHighlighterAdapter;
+use syntect::{
+    html::{ClassStyle, ClassedHTMLGenerator},
+    parsing::SyntaxSet,
+    util::LinesWithEndings,
+};
 
 pub struct ComrakSyntectAdapter<'a> {
     pub(crate) syntax_set: &'a SyntaxSet,
@@ -18,7 +21,7 @@ impl SyntaxHighlighterAdapter for ComrakSyntectAdapter<'_> {
             ClassedHTMLGenerator::new_with_class_style(syntax, self.syntax_set, ClassStyle::Spaced);
 
         for line in LinesWithEndings::from(code) {
-            let _ = html_generator.parse_html_for_line_which_includes_newline(line);
+            let _res = html_generator.parse_html_for_line_which_includes_newline(line);
         }
 
         format!(

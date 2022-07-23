@@ -1,5 +1,6 @@
-use crate::database::schema::repository::RepositoryId;
 use std::path::Path;
+
+use crate::database::schema::repository::RepositoryId;
 
 #[repr(u8)]
 pub enum TreePrefix {

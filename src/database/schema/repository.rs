@@ -1,17 +1,13 @@
-use crate::database::schema::commit::CommitTree;
-use crate::database::schema::prefixes::TreePrefix;
-use crate::database::schema::tag::TagTree;
-use crate::database::schema::Yoked;
+use std::{borrow::Cow, collections::BTreeMap, ops::Deref, path::Path};
+
 use anyhow::{Context, Result};
 use nom::AsBytes;
 use serde::{Deserialize, Serialize};
 use sled::IVec;
-use std::borrow::Cow;
-use std::collections::BTreeMap;
-use std::ops::Deref;
-use std::path::Path;
 use time::OffsetDateTime;
 use yoke::{Yoke, Yokeable};
+
+use crate::database::schema::{commit::CommitTree, prefixes::TreePrefix, tag::TagTree, Yoked};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Hash, Yokeable)]
 pub struct Repository<'a> {

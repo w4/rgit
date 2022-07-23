@@ -1,13 +1,11 @@
-use anyhow::Context;
 use std::collections::BTreeMap;
 
+use anyhow::Context;
 use askama::Template;
-use axum::response::Response;
-use axum::Extension;
+use axum::{response::Response, Extension};
 
 use super::filters;
-use crate::database::schema::repository::Repository;
-use crate::into_response;
+use crate::{database::schema::repository::Repository, into_response};
 
 #[derive(Template)]
 #[template(path = "index.html")]

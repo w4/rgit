@@ -1,15 +1,18 @@
 #![deny(clippy::pedantic)]
 
+use std::{sync::Arc, time::Duration};
+
 use askama::Template;
-use axum::http::StatusCode;
-use axum::response::IntoResponse;
 use axum::{
-    body::Body, handler::Handler, http, http::HeaderValue, response::Response, routing::get,
+    body::Body,
+    handler::Handler,
+    http,
+    http::{HeaderValue, StatusCode},
+    response::{IntoResponse, Response},
+    routing::get,
     Extension, Router,
 };
 use bat::assets::HighlightingAssets;
-use std::sync::Arc;
-use std::time::Duration;
 use syntect::html::ClassStyle;
 use tower_layer::layer_fn;
 use tracing::{info, instrument};

@@ -1,10 +1,12 @@
-use anyhow::{bail, Context, Result};
-use axum::body::{boxed, Body};
-use axum::http::header::HeaderName;
-use axum::http::HeaderValue;
-use axum::response::Response;
-use httparse::Status;
 use std::str::FromStr;
+
+use anyhow::{bail, Context, Result};
+use axum::{
+    body::{boxed, Body},
+    http::{header::HeaderName, HeaderValue},
+    response::Response,
+};
+use httparse::Status;
 
 // https://en.wikipedia.org/wiki/Common_Gateway_Interface
 pub fn cgi_to_response(buffer: &[u8]) -> Result<Response> {

@@ -1,0 +1,7 @@
+edition = "2021"
+## not yet supported on stable
+#imports_granularity = "Crate"
+newline_style = "Unix"
+## not yet supported on stable
+#group_imports = "StdExternalCrate"
+use_field_init_shorthand = true

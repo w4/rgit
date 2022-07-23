@@ -1,6 +1,9 @@
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
+
 use git2::Sort;
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
 use time::OffsetDateTime;
 use tracing::{info, info_span};
 

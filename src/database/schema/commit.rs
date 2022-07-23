@@ -1,11 +1,12 @@
-use crate::database::schema::Yoked;
+use std::{borrow::Cow, ops::Deref};
+
 use git2::{Oid, Signature};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sled::IVec;
-use std::borrow::Cow;
-use std::ops::Deref;
 use time::OffsetDateTime;
 use yoke::{Yoke, Yokeable};
+
+use crate::database::schema::Yoked;
 
 #[derive(Serialize, Deserialize, Debug, Yokeable)]
 pub struct Commit<'a> {

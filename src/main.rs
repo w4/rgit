@@ -1,6 +1,8 @@
 #![deny(clippy::pedantic)]
 
 use std::{sync::Arc, time::Duration};
+use std::net::SocketAddr;
+use std::path::PathBuf;
 
 use askama::Template;
 use axum::{
@@ -13,6 +15,7 @@ use axum::{
     Extension, Router,
 };
 use bat::assets::HighlightingAssets;
+use clap::Parser;
 use syntect::html::ClassStyle;
 use tower_layer::layer_fn;
 use tracing::{info, instrument};
@@ -27,8 +30,19 @@ mod syntax_highlight;
 
 const CRATE_VERSION: &str = clap::crate_version!();
 
+#[derive(Parser, Debug)]
+#[clap(author, version, about)]
+pub struct Args {
+    #[clap(short, long, value_parser)]
+    db_store: PathBuf,
+    bind_address: SocketAddr,
+    scan_path: PathBuf,
+}
+
 #[tokio::main]
 async fn main() {
+    let args: Args = Args::parse();
+
     let subscriber = tracing_subscriber::fmt();
     #[cfg(debug_assertions)]
     let subscriber = subscriber.pretty();
@@ -36,16 +50,17 @@ async fn main() {
 
     let db = sled::Config::default()
         .use_compression(true)
-        .path("/tmp/some-sled.db")
+        .path(&args.db_store)
         .open()
         .unwrap();
 
     std::thread::spawn({
         let db = db.clone();
+        let scan_path = args.scan_path.clone();
 
         move || loop {
             info!("Running periodic index");
-            crate::database::indexer::run(&db);
+            crate::database::indexer::run(&scan_path, &db);
             info!("Finished periodic index");
 
             std::thread::sleep(Duration::from_secs(300));
@@ -86,9 +101,10 @@ async fn main() {
         .fallback(methods::repo::service.into_service())
         .layer(layer_fn(LoggingMiddleware))
         .layer(Extension(Arc::new(Git::new(syntax_set))))
-        .layer(Extension(db));
+        .layer(Extension(db))
+        .layer(Extension(Arc::new(args.scan_path)));
 
-    axum::Server::bind(&"127.0.0.1:3333".parse().unwrap())
+    axum::Server::bind(&args.bind_address)
         .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
         .await
         .unwrap();

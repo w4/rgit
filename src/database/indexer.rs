@@ -13,13 +13,12 @@ use crate::database::schema::{
     tag::Tag,
 };
 
-pub fn run(db: &sled::Db) {
+pub fn run(scan_path: &Path, db: &sled::Db) {
     let span = info_span!("index_update");
     let _entered = span.enter();
 
     info!("Starting index update");
 
-    let scan_path = Path::new("/Users/jordan/Code/test-git");
     update_repository_metadata(scan_path, db);
     update_repository_reflog(scan_path, db);
     update_repository_tags(scan_path, db);

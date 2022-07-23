@@ -50,6 +50,8 @@ where
     bytes::Bytes: From<ReqBody::Data>,
     <ReqBody as HttpBody>::Error: std::error::Error + Send + Sync,
 {
+    let scan_path = request.extensions().get::<Arc<PathBuf>>().expect("scan_path missing");
+
     let mut uri_parts: Vec<&str> = request
         .uri()
         .path()
@@ -111,7 +113,7 @@ where
     };
 
     let uri = uri_parts.into_iter().collect::<PathBuf>().clean();
-    let path = Path::new("../test-git").canonicalize().unwrap().join(&uri);
+    let path = scan_path.join(&uri);
 
     request.extensions_mut().insert(ChildPath(child_path));
     request.extensions_mut().insert(Repository(uri));

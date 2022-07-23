@@ -6,10 +6,11 @@ use axum::{response::Response, Extension};
 use yoke::Yoke;
 
 use crate::{
+    database::schema::{commit::YokedCommit, repository::YokedRepository},
     into_response,
     methods::{
         filters,
-        repo::{Refs, Repository, Result},
+        repo::{Refs, Repository, Result, DEFAULT_BRANCHES},
     },
 };
 
@@ -27,8 +28,7 @@ pub async fn handle(
 ) -> Result<Response> {
     let repository = crate::database::schema::repository::Repository::open(&db, &*repo)?
         .context("Repository does not exist")?;
-    let commit_tree = repository.get().commit_tree(&db, "refs/heads/master")?;
-    let commits = commit_tree.fetch_latest(11, 0).await;
+    let commits = get_default_branch_commits(&repository, &db).await?;
     let commit_list = commits.iter().map(Yoke::get).collect();
 
     let mut heads = BTreeMap::new();
@@ -52,4 +52,20 @@ pub async fn handle(
         refs: Refs { heads, tags },
         commit_list,
     }))
+}
+
+pub async fn get_default_branch_commits(
+    repository: &YokedRepository,
+    database: &sled::Db,
+) -> Result<Vec<YokedCommit>> {
+    for branch in DEFAULT_BRANCHES {
+        let commit_tree = repository.get().commit_tree(database, branch)?;
+        let commits = commit_tree.fetch_latest(11, 0).await;
+
+        if !commits.is_empty() {
+            return Ok(commits);
+        }
+    }
+
+    Ok(vec![])
 }

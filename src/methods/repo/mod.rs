@@ -41,6 +41,8 @@ use crate::{
     layers::UnwrapInfallible,
 };
 
+pub const DEFAULT_BRANCHES: [&str; 2] = ["refs/heads/master", "refs/heads/main"];
+
 // this is some wicked, wicked abuse of axum right here...
 #[allow(clippy::trait_duplication_in_bounds)] // clippy seems a bit.. lost
 pub async fn service<ReqBody>(mut request: Request<ReqBody>) -> Response

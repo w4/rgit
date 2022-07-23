@@ -1,4 +1,4 @@
-use std::{io::ErrorKind, path::PathBuf, process::Stdio, str::FromStr};
+use std::{io::ErrorKind, path::Path, process::Stdio, str::FromStr};
 
 use anyhow::{bail, Context};
 use axum::{
@@ -62,7 +62,7 @@ pub async fn handle(
         .context("Failed to read git http-backend response")?;
     let resp = cgi_to_response(&out.stdout)?;
 
-    if out.stderr.len() > 0 {
+    if !out.stderr.is_empty() {
         warn!(
             "Git returned an error: `{}`",
             String::from_utf8_lossy(&out.stderr)
@@ -72,9 +72,9 @@ pub async fn handle(
     Ok(resp)
 }
 
-fn extract_path<'a>(uri: &'a Uri, repository: &PathBuf) -> Result<&'a str> {
+fn extract_path<'a>(uri: &'a Uri, repository: &Path) -> Result<&'a str> {
     let path = uri.path();
-    let path = path.strip_prefix("/").unwrap_or(path);
+    let path = path.strip_prefix('/').unwrap_or(path);
 
     if let Some(prefix) = repository.as_os_str().to_str() {
         Ok(path.strip_prefix(prefix).unwrap_or(path))

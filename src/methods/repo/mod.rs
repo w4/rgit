@@ -50,7 +50,10 @@ where
     bytes::Bytes: From<ReqBody::Data>,
     <ReqBody as HttpBody>::Error: std::error::Error + Send + Sync,
 {
-    let scan_path = request.extensions().get::<Arc<PathBuf>>().expect("scan_path missing");
+    let scan_path = request
+        .extensions()
+        .get::<Arc<PathBuf>>()
+        .expect("scan_path missing");
 
     let mut uri_parts: Vec<&str> = request
         .uri()

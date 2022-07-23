@@ -1,8 +1,8 @@
 #![deny(clippy::pedantic)]
 
-use std::{sync::Arc, time::Duration};
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::{sync::Arc, time::Duration};
 
 use askama::Template;
 use axum::{
@@ -17,6 +17,7 @@ use axum::{
 use bat::assets::HighlightingAssets;
 use clap::Parser;
 use syntect::html::ClassStyle;
+use tower_http::cors::CorsLayer;
 use tower_layer::layer_fn;
 use tracing::{info, instrument};
 
@@ -102,7 +103,8 @@ async fn main() {
         .layer(layer_fn(LoggingMiddleware))
         .layer(Extension(Arc::new(Git::new(syntax_set))))
         .layer(Extension(db))
-        .layer(Extension(Arc::new(args.scan_path)));
+        .layer(Extension(Arc::new(args.scan_path)))
+        .layer(CorsLayer::new());
 
     axum::Server::bind(&args.bind_address)
         .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())

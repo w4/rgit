@@ -63,7 +63,10 @@ pub async fn handle(
     let resp = cgi_to_response(&out.stdout)?;
 
     if out.stderr.len() > 0 {
-        warn!("Git returned an error: `{}`", String::from_utf8_lossy(&out.stderr));
+        warn!(
+            "Git returned an error: `{}`",
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
 
     Ok(resp)
@@ -100,7 +103,11 @@ pub fn cgi_to_response(buffer: &[u8]) -> Result<Response, anyhow::Error> {
         );
     }
 
-    if let Some(status) = response.headers_mut().remove("Status").filter(|s| s.len() >= 3) {
+    if let Some(status) = response
+        .headers_mut()
+        .remove("Status")
+        .filter(|s| s.len() >= 3)
+    {
         let status = &status.as_ref()[..3];
 
         if let Ok(status) = StatusCode::from_bytes(status) {

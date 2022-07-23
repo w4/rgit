@@ -5,7 +5,7 @@
 
 {% block content %}
 <table class="repositories">
-    {% call refs::commit_table(commits, false) %}
+    {% call refs::commit_table(commits) %}
 </table>
 
 {% if let Some(next_offset) = next_offset %}

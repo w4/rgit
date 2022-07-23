@@ -60,7 +60,7 @@
 </thead>
 {% endmacro %}
 
-{% macro commit_table(commits, with_extras) %}
+{% macro commit_table(commits) %}
 <thead>
 <tr>
     <th>Age</th>
@@ -82,10 +82,6 @@
         <img src="https://www.gravatar.com/avatar/{{ commit.author.email|md5 }}?s=13&d=retro" width="13" height="13">
         {{ commit.author.name }}
     </td>
-
-    {% if with_extras %}
-    <td></td>
-    {% endif %}
 </tr>
 {% endfor %}
 </tbody>

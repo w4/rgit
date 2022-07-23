@@ -49,7 +49,7 @@
     </tr>
     </tbody>
 
-    {% call refs::commit_table(commit_list.iter().take(10), true) %}
+    {% call refs::commit_table(commit_list.iter().take(10)) %}
     {% if commit_list.len() > 10 %}
     <tbody>
     <tr class="no-background">

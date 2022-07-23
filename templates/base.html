@@ -13,7 +13,11 @@
     <h1><a href="/" class="no-hover">🏡</a> {% block header %}Git repository browser{% endblock %}</h1>
 </header>
 
-{% block nav %}{% endblock %}
+{% block nav %}
+<nav>
+    <a href="/" class="active">index</a>
+</nav>
+{% endblock %}
 
 <main>
     {% block content %}{% endblock %}

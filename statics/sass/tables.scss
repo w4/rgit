@@ -34,6 +34,9 @@ table.repositories {
 
   tbody {
     tr {
+      height: 1.3rem;
+      vertical-align: middle;
+
       &:nth-child(odd) {
         background: #f7f7f7;
 
@@ -43,7 +46,7 @@ table.repositories {
       }
 
       &:nth-child(even) {
-        background: #e1e3e8;
+        background: #e1e1e1;
 
         @media (prefers-color-scheme: dark) {
           background: none;

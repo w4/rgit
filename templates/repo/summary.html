@@ -6,7 +6,7 @@
 {% block content %}
 <table class="repositories">
     {% call refs::branch_table(refs.heads.iter().take(10)) %}
-    {% if refs.heads.len() > 10 %}
+    {%- if refs.heads.len() > 10 -%}
     <tbody>
     <tr class="no-background">
         <td><a href="/{{ repo.display() }}/refs" class="no-style">[...]</a></td>
@@ -15,9 +15,9 @@
         <td></td>
     </tr>
     </tbody>
-    {% endif %}
+    {%- endif -%}
 
-    {% if !refs.tags.is_empty() %}
+    {%- if !refs.tags.is_empty() -%}
         <tbody>
         <tr class="separator">
             <td></td>
@@ -27,8 +27,8 @@
         </tr>
         </tbody>
 
-        {% call refs::tag_table(refs.tags.iter().take(10)) %}
-        {% if refs.tags.len() > 10 %}
+        {%- call refs::tag_table(refs.tags.iter().take(10)) -%}
+        {%- if refs.tags.len() > 10 -%}
         <tbody>
         <tr class="no-background">
             <td><a href="/{{ repo.display() }}/refs" class="no-style">[...]</a></td>
@@ -37,8 +37,8 @@
             <td></td>
         </tr>
         </tbody>
-        {% endif %}
-    {% endif %}
+        {%- endif -%}
+    {%- endif %}
 
     <tbody>
     <tr class="separator">
@@ -59,6 +59,6 @@
         <td></td>
     </tr>
     </tbody>
-    {% endif %}
+    {%- endif %}
 </table>
 {% endblock %}

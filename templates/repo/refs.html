@@ -7,17 +7,17 @@
 <table class="repositories">
     {% call refs::branch_table(refs.heads) %}
 
-    {% if !refs.tags.is_empty() %}
-        <tbody>
-        <tr class="separator">
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-        </tr>
-        </tbody>
+    {%- if !refs.tags.is_empty() %}
+    <tbody>
+    <tr class="separator">
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+    </tr>
+    </tbody>
 
-        {% call refs::tag_table(refs.tags) %}
-    {% endif %}
+    {%- call refs::tag_table(refs.tags) -%}
+    {%- endif %}
 </table>
 {% endblock %}

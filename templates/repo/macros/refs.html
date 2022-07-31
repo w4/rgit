@@ -1,88 +1,88 @@
-{% macro branch_table(branches) %}
-<thead>
-<tr>
-    <th>Branch</th>
-    <th>Commit message</th>
-    <th>Author</th>
-    <th>Age</th>
-</tr>
-</thead>
+{%- macro branch_table(branches) -%}
+    <thead>
+    <tr>
+        <th>Branch</th>
+        <th>Commit message</th>
+        <th>Author</th>
+        <th>Age</th>
+    </tr>
+    </thead>
 
-<tbody>
-{% for (name, commit) in branches %}
-<tr>
-    <td><a href="/{{ repo.display() }}/log/?h={{ name }}">{{ name }}</a></td>
-    <td><a href="/{{ repo.display() }}/commit/?id={{ commit.get().hash|hex }}">{{ commit.get().summary }}</a></td>
-    <td>
-        <img src="https://www.gravatar.com/avatar/{{ commit.get().author.email|md5 }}?s=13&d=retro" width="13" height="13">
-        {{ commit.get().author.name }}
-    </td>
-    <td>
-        <time datetime="{{ commit.get().author.time }}" title="{{ commit.get().author.time }}">
-            {{ commit.get().author.time|timeago }}
-        </time>
-    </td>
-</tr>
-{% endfor %}
-</tbody>
-{% endmacro %}
+    <tbody>
+    {% for (name, commit) in branches -%}
+    <tr>
+        <td><a href="/{{ repo.display() }}/log/?h={{ name }}">{{ name }}</a></td>
+        <td><a href="/{{ repo.display() }}/commit/?id={{ commit.get().hash|hex }}">{{ commit.get().summary }}</a></td>
+        <td>
+            <img src="https://www.gravatar.com/avatar/{{ commit.get().author.email|md5 }}?s=13&d=retro" width="13" height="13">
+            {{ commit.get().author.name }}
+        </td>
+        <td>
+            <time datetime="{{ commit.get().author.time }}" title="{{ commit.get().author.time }}">
+                {{- commit.get().author.time|timeago -}}
+            </time>
+        </td>
+    </tr>
+    {% endfor -%}
+    </tbody>
+{%- endmacro -%}
 
-{% macro tag_table(tags) %}
-<thead>
-<tr class="no-background">
-    <th>Tag</th>
-    <th>Download</th>
-    <th>Author</th>
-    <th>Age</th>
-</tr>
-</thead>
+{%- macro tag_table(tags) -%}
+    <thead>
+    <tr class="no-background">
+        <th>Tag</th>
+        <th>Download</th>
+        <th>Author</th>
+        <th>Age</th>
+    </tr>
+    </thead>
 
-<tbody>
-{% for (name, tag) in tags %}
-<tr>
-    <td><a href="/{{ repo.display() }}/tag/?h={{ name }}">{{ name }}</a></td>
-    <td></td>
-    <td>
-        {% if let Some(tagger) = tag.get().tagger %}
-        <img src="https://www.gravatar.com/avatar/{{ tagger.email|md5 }}?s=13&d=retro" width="13" height="13">
-        {{ tagger.name }}
-        {% endif %}
-    </td>
-    <td>
-        {% if let Some(tagger) = tag.get().tagger %}
-        <time datetime="{{ tagger.time }}" title="{{ tagger.time }}">
-            {{ tagger.time|timeago }}
-        </time>
-        {% endif %}
-    </td>
-</tr>
-{% endfor %}
-</thead>
-{% endmacro %}
+    <tbody>
+    {% for (name, tag) in tags -%}
+    <tr>
+        <td><a href="/{{ repo.display() }}/tag/?h={{ name }}">{{- name -}}</a></td>
+        <td></td>
+        <td>
+            {% if let Some(tagger) = tag.get().tagger -%}
+            <img src="https://www.gravatar.com/avatar/{{ tagger.email|md5 }}?s=13&d=retro" width="13" height="13">
+            {{ tagger.name }}
+            {%- endif %}
+        </td>
+        <td>
+            {% if let Some(tagger) = tag.get().tagger -%}
+            <time datetime="{{ tagger.time }}" title="{{ tagger.time }}">
+                {{- tagger.time|timeago -}}
+            </time>
+            {%- endif %}
+        </td>
+    </tr>
+    {% endfor -%}
+    </tbody>
+{%- endmacro -%}
 
-{% macro commit_table(commits) %}
-<thead>
-<tr>
-    <th>Age</th>
-    <th>Commit message</th>
-    <th>Author</th>
-</tr>
-</thead>
+{%- macro commit_table(commits) -%}
+    <thead>
+    <tr>
+        <th>Age</th>
+        <th>Commit message</th>
+        <th>Author</th>
+    </tr>
+    </thead>
 
-<tbody>
-{% for commit in commits %}
-<tr>
-    <td>
-        <time datetime="{{ commit.committer.time }}" title="{{ commit.committer.time }}">
-            {{ commit.committer.time.clone()|timeago }}
-        </time>
-    </td>
-    <td><a href="/{{ repo.display() }}/commit/?id={{ commit.hash|hex }}">{{ commit.summary }}</a></td>
-    <td>
-        <img src="https://www.gravatar.com/avatar/{{ commit.author.email|md5 }}?s=13&d=retro" width="13" height="13">
-        {{ commit.author.name }}
-    </td>
-</tr>
-{% endfor %}
-</tbody>
-{% endmacro %}
+    <tbody>
+    {% for commit in commits -%}
+    <tr>
+        <td>
+            <time datetime="{{ commit.committer.time }}" title="{{ commit.committer.time }}">
+                {{- commit.committer.time.clone()|timeago -}}
+            </time>
+        </td>
+        <td><a href="/{{ repo.display() }}/commit/?id={{ commit.hash|hex }}">{{ commit.summary }}</a></td>
+        <td>
+            <img src="https://www.gravatar.com/avatar/{{ commit.author.email|md5 }}?s=13&d=retro" width="13" height="13">
+            {{ commit.author.name }}
+        </td>
+    </tr>
+    {% endfor -%}
+    </tbody>
+{%- endmacro -%}

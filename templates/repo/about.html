@@ -1,25 +1,25 @@
 {% extends "repo/base.html" %}
 
-{% block head %}
-{% if let Some(readme) = readme %}
-    {% if readme.0 == crate::git::ReadmeFormat::Markdown %}
-        <link rel="stylesheet" type="text/css" href="/highlight.css" />
-        <link rel="stylesheet" type="text/css" href="/highlight-dark.css" />
-    {% endif %}
-{% endif %}
+{% block head -%}
+{%- if let Some(readme) = readme -%}
+    {%- if readme.0 == crate::git::ReadmeFormat::Markdown %}
+    <link rel="stylesheet" type="text/css" href="/highlight.css" />
+    <link rel="stylesheet" type="text/css" href="/highlight-dark.css" />
+    {%- endif -%}
+{%- endif -%}
 {% endblock %}
 
 {% block about_nav_class %}active{% endblock %}
 
 {% block content %}
-{% if let Some(readme) = readme %}
-    {% match readme.0 %}
-        {% when crate::git::ReadmeFormat::Markdown %}
+{% if let Some(readme) = readme -%}
+    {%- match readme.0 -%}
+        {%- when crate::git::ReadmeFormat::Markdown -%}
             {{ readme.1|safe }}
-        {% when crate::git::ReadmeFormat::Plaintext %}
+        {%- when crate::git::ReadmeFormat::Plaintext -%}
             <pre>{{ readme.1 }}</pre>
-    {% endmatch %}
-{% else %}
+    {%- endmatch -%}
+{%- else -%}
     No README in repository HEAD.
-{% endif %}
+{%- endif %}
 {% endblock %}

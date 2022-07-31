@@ -2,9 +2,9 @@
 
 {% block title %}{{ repo.display() }}{% endblock %}
 
-{% block header %}
-<a href="/" class="no-style">index</a> : {{ repo.display() }}
-{% endblock %}
+{%- block header -%}
+    <a href="/" class="no-style">index</a> : {{ repo.display() }}
+{%- endblock -%}
 
 {% block nav %}
 <nav>

@@ -12,44 +12,44 @@
         </thead>
 
         <tbody>
-        {% for (path, repositories) in repositories.iter() %}
-            {% if let Some(path) = path %}
-                <tr><td class="repo-section" colspan="4">{{ path }}</td></tr>
-            {% endif %}
+        {%- for (path, repositories) in repositories.iter() %}
+            {%- if let Some(path) = path %}
+            <tr><td class="repo-section" colspan="4">{{ path }}</td></tr>
+            {%- endif -%}
 
-            {%for repository in repositories %}
-                <tr class="{% if path.is_some() %}has-parent{% endif %}">
-                    <td>
-                        <a href="/{% if let Some(path) = path %}{{ path }}/{% endif %}{{ repository.name }}">
-                            {{ repository.name }}
-                        </a>
-                    </td>
-                    <td>
-                        <a href="/{% if let Some(path) = path %}{{ path }}/{% endif %}{{ repository.name }}">
-                            {% if let Some(description) = repository.description %}
-                                {{ description }}
-                            {% else %}
-                                Unnamed repository; edit this file 'description' to name the repository.
-                            {% endif %}
-                        </a>
-                    </td>
-                    <td>
-                        <a href="/{% if let Some(path) = path %}{{ path }}/{% endif %}{{ repository.name }}">
-                            {% if let Some(owner) = repository.owner %}
-                                {{ owner }}
-                            {% endif %}
-                        </a>
-                    </td>
-                    <td>
-                        <a href="/{% if let Some(path) = path %}{{ path }}/{% endif %}{{ repository.name }}">
-                            <time datetime="{{ repository.last_modified }}" title="{{ repository.last_modified }}">
-                                {{ repository.last_modified.clone()|timeago }}
-                            </time>
-                        </a>
-                    </td>
-                </tr>
-            {% endfor %}
-        {% endfor %}
+            {%- for repository in repositories %}
+            <tr class="{% if path.is_some() %}has-parent{% endif %}">
+                <td>
+                    <a href="/{% if let Some(path) = path %}{{ path }}/{% endif %}{{ repository.name }}">
+                        {{- repository.name -}}
+                    </a>
+                </td>
+                <td>
+                    <a href="/{% if let Some(path) = path %}{{ path }}/{% endif %}{{ repository.name }}">
+                        {%- if let Some(description) = repository.description -%}
+                            {{- description -}}
+                        {%- else -%}
+                            Unnamed repository; edit this file 'description' to name the repository.
+                        {%- endif -%}
+                    </a>
+                </td>
+                <td>
+                    <a href="/{% if let Some(path) = path %}{{ path }}/{% endif %}{{ repository.name }}">
+                        {%- if let Some(owner) = repository.owner -%}
+                            {{- owner -}}
+                        {%- endif -%}
+                    </a>
+                </td>
+                <td>
+                    <a href="/{% if let Some(path) = path %}{{ path }}/{% endif %}{{ repository.name }}">
+                        <time datetime="{{ repository.last_modified }}" title="{{ repository.last_modified }}">
+                            {{- repository.last_modified.clone()|timeago -}}
+                        </time>
+                    </a>
+                </td>
+            </tr>
+            {%- endfor -%}
+        {%- endfor %}
         </tbody>
     </table>
 {% endblock %}

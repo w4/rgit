@@ -1,9 +1,9 @@
 {% extends "repo/base.html" %}
 
 {% block head %}
-<link rel="stylesheet" type="text/css" href="/highlight.css" />
-<link rel="stylesheet" type="text/css" href="/highlight-dark.css" />
-{% endblock %}
+    <link rel="stylesheet" type="text/css" href="/highlight.css" />
+    <link rel="stylesheet" type="text/css" href="/highlight-dark.css" />
+{%- endblock %}
 
 {% block commit_nav_class %}active{% endblock %}
 
@@ -28,12 +28,12 @@
         <th>tree</th>
         <td colspan="2"><pre><a href="/{{ repo.display() }}/tree?id={{ commit.tree() }}" class="no-style">{{ commit.tree() }}</a></pre></td>
     </tr>
-    {% for parent in commit.parents() %}
+    {%- for parent in commit.parents() %}
     <tr>
         <th>parent</th>
         <td colspan="2"><pre><a href="/{{ repo.display() }}/commit?id={{ parent }}" class="no-style">{{ parent }}</a></pre></td>
     </tr>
-    {% endfor %}
+    {%- endfor %}
     </tbody>
 </table>
 

@@ -142,13 +142,8 @@ impl CommitTree {
         };
 
         let end = latest_key.saturating_sub(offset);
-        let start = end.saturating_sub(amount);
-        let range = start.to_be_bytes()..end.to_be_bytes();
-        let iter = if range.is_empty() {
-            self.range(start.to_be_bytes()..=end.to_be_bytes())
-        } else {
-            self.range(range)
-        };
+        let start = end.saturating_sub(amount - 1);
+        let iter = self.range(start.to_be_bytes()..=end.to_be_bytes());
 
         tokio::task::spawn_blocking(move || {
             iter.rev()

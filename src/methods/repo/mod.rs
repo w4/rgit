@@ -162,7 +162,7 @@ pub struct Error(anyhow::Error);
 
 impl From<Arc<anyhow::Error>> for Error {
     fn from(e: Arc<anyhow::Error>) -> Self {
-        Self(anyhow::Error::msg(format!("{:?}", e)))
+        Self(anyhow::Error::msg(format!("{e:?}")))
     }
 }
 

@@ -225,25 +225,19 @@ impl OpenRepository {
                         .context("Couldn't get the tree that the HEAD refers to")?;
 
                     for name in README_FILES {
-                        let tree_entry = if let Some(file) = tree.get_name(name) {
-                            file
-                        } else {
+                        let Some(tree_entry) = tree.get_name(name) else {
                             continue;
                         };
 
-                        let blob = if let Some(blob) = tree_entry
+                        let Some(blob) = tree_entry
                             .to_object(&repo)
                             .ok()
                             .and_then(|v| v.into_blob().ok())
-                        {
-                            blob
-                        } else {
+                        else {
                             continue;
                         };
 
-                        let content = if let Ok(content) = std::str::from_utf8(blob.content()) {
-                            content
-                        } else {
+                        let Ok(content) = std::str::from_utf8(blob.content()) else {
                             continue;
                         };
 
@@ -508,7 +502,7 @@ fn fetch_diff_and_stats(
     let email = diff
         .format_email(1, 1, commit, None)
         .context("Couldn't build diff for commit")?;
-    diff_plain.extend_from_slice(&*email);
+    diff_plain.extend_from_slice(&email);
 
     let diff_stats = diff
         .stats()?

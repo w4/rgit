@@ -17,7 +17,7 @@ pub fn hex(s: &[u8]) -> Result<String, askama::Error> {
 }
 
 pub fn md5(s: &str) -> Result<String, askama::Error> {
-    Ok(hex::encode(&md5::compute(s).0))
+    Ok(hex::encode(md5::compute(s).0))
 }
 
 #[allow(dead_code)]

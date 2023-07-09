@@ -44,7 +44,7 @@ fn update_repository_metadata(scan_path: &Path, db: &sled::Db) {
         let description = std::fs::read(repository.join("description")).unwrap_or_default();
         let description = Some(String::from_utf8_lossy(&description)).filter(|v| !v.is_empty());
 
-        let git_repository = git2::Repository::open(scan_path.join(&relative)).unwrap();
+        let git_repository = git2::Repository::open(scan_path.join(relative)).unwrap();
 
         Repository {
             id,
@@ -131,7 +131,7 @@ fn update_repository_reflog(scan_path: &Path, db: &sled::Db) {
             // a complete and utter hack to remove potentially dropped commits from our tree,
             // we'll need to add `clear()` to sled's tx api to remove this
             for to_remove in (i + 1)..(i + 100) {
-                commit_tree.remove(&to_remove.to_be_bytes()).unwrap();
+                commit_tree.remove(to_remove.to_be_bytes()).unwrap();
             }
         }
     }

@@ -22,7 +22,7 @@ impl<'a> Tag<'a> {
 
     pub fn insert(&self, batch: &TagTree, name: &str) {
         batch
-            .insert(&name.as_bytes(), bincode::serialize(self).unwrap())
+            .insert(name.as_bytes(), bincode::serialize(self).unwrap())
             .unwrap();
     }
 }

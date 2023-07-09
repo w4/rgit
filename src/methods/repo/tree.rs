@@ -29,12 +29,12 @@ impl Display for UriQuery {
         let mut prefix = "?";
 
         if let Some(id) = self.id.as_deref() {
-            write!(f, "{}id={}", prefix, id)?;
+            write!(f, "{prefix}id={id}")?;
             prefix = "&";
         }
 
         if let Some(branch) = self.branch.as_deref() {
-            write!(f, "{}h={}", prefix, branch)?;
+            write!(f, "{prefix}h={branch}")?;
         }
 
         Ok(())

@@ -40,7 +40,7 @@ impl<'a> Commit<'a> {
 
     pub fn insert(&self, batch: &CommitTree, id: usize) {
         batch
-            .insert(&id.to_be_bytes(), bincode::serialize(self).unwrap())
+            .insert(id.to_be_bytes(), bincode::serialize(self).unwrap())
             .unwrap();
     }
 }

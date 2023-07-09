@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::io::Write;
 
 use comrak::adapters::SyntaxHighlighterAdapter;
 use syntect::{
@@ -12,7 +13,12 @@ pub struct ComrakSyntectAdapter<'a> {
 }
 
 impl SyntaxHighlighterAdapter for ComrakSyntectAdapter<'_> {
-    fn highlight(&self, lang: Option<&str>, code: &str) -> String {
+    fn write_highlighted(
+        &self,
+        output: &mut dyn Write,
+        lang: Option<&str>,
+        code: &str,
+    ) -> std::io::Result<()> {
         let syntax = lang
             .and_then(|v| self.syntax_set.find_syntax_by_token(v))
             .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text());
@@ -24,17 +30,26 @@ impl SyntaxHighlighterAdapter for ComrakSyntectAdapter<'_> {
             let _res = html_generator.parse_html_for_line_which_includes_newline(line);
         }
 
-        format!(
+        write!(
+            output,
             "<code>{}</code>",
             html_generator.finalize().replace('\n', "</code>\n<code>")
         )
     }
 
-    fn build_pre_tag(&self, _attributes: &HashMap<String, String>) -> String {
-        r#"<pre>"#.to_string()
+    fn write_pre_tag(
+        &self,
+        output: &mut dyn Write,
+        _attributes: HashMap<String, String>,
+    ) -> std::io::Result<()> {
+        write!(output, r#"<pre>"#)
     }
 
-    fn build_code_tag(&self, _attributes: &HashMap<String, String>) -> String {
-        String::with_capacity(0)
+    fn write_code_tag(
+        &self,
+        _output: &mut dyn Write,
+        _attributes: HashMap<String, String>,
+    ) -> std::io::Result<()> {
+        Ok(())
     }
 }

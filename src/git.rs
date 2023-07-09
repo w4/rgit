@@ -11,7 +11,8 @@ use anyhow::{Context, Result};
 use bytes::{Bytes, BytesMut};
 use comrak::{ComrakOptions, ComrakPlugins};
 use git2::{
-    BranchType, DiffFormat, DiffLineType, DiffOptions, DiffStatsFormat, ObjectType, Oid, Signature,
+    BranchType, DiffFormat, DiffLineType, DiffOptions, DiffStatsFormat, Email, EmailCreateOptions,
+    ObjectType, Oid, Signature,
 };
 use moka::future::Cache;
 use parking_lot::Mutex;
@@ -492,17 +493,25 @@ fn fetch_diff_and_stats(
     let current_tree = commit.tree().context("Couldn't get tree for the commit")?;
     let parent_tree = commit.parents().next().and_then(|v| v.tree().ok());
     let mut diff_opts = DiffOptions::new();
-    let mut diff = repo.diff_tree_to_tree(
+    let diff = repo.diff_tree_to_tree(
         parent_tree.as_ref(),
         Some(&current_tree),
         Some(&mut diff_opts),
     )?;
 
     let mut diff_plain = BytesMut::new();
-    let email = diff
-        .format_email(1, 1, commit, None)
-        .context("Couldn't build diff for commit")?;
-    diff_plain.extend_from_slice(&email);
+    let email = Email::from_diff(
+        &diff,
+        1,
+        1,
+        &commit.id(),
+        "",
+        "",
+        &commit.author(),
+        &mut EmailCreateOptions::default(),
+    )
+    .context("Couldn't build diff for commit")?;
+    diff_plain.extend_from_slice(email.as_slice());
 
     let diff_stats = diff
         .stats()?

@@ -18,7 +18,7 @@ use std::{
 
 use axum::{
     body::HttpBody,
-    handler::Handler,
+    handler::HandlerWithoutStateExt,
     http::{Request, StatusCode},
     response::{IntoResponse, Response},
 };

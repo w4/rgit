@@ -23,8 +23,8 @@ pub async fn handle(
     Extension(Repository(repository)): Extension<Repository>,
     method: Method,
     uri: Uri,
-    body: BodyStream,
     content_type: Option<TypedHeader<ContentType>>,
+    body: BodyStream,
 ) -> Result<Response> {
     let path = extract_path(&uri, &repository)?;
 

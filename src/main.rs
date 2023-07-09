@@ -7,7 +7,6 @@ use std::{sync::Arc, time::Duration};
 use askama::Template;
 use axum::{
     body::Body,
-    handler::Handler,
     http,
     http::{HeaderValue, StatusCode},
     response::{IntoResponse, Response},
@@ -93,6 +92,17 @@ async fn main() {
             .into_boxed_bytes(),
     );
 
+    let static_css = |content: &'static [u8]| {
+        move || async move {
+            let mut resp = Response::new(Body::from(content));
+            resp.headers_mut().insert(
+                http::header::CONTENT_TYPE,
+                HeaderValue::from_static("text/css"),
+            );
+            resp
+        }
+    };
+
     let app = Router::new()
         .route("/", get(methods::index::handle))
         .route(
@@ -104,7 +114,7 @@ async fn main() {
         )
         .route("/highlight.css", get(static_css(css)))
         .route("/highlight-dark.css", get(static_css(dark_css)))
-        .fallback(methods::repo::service.into_service())
+        .fallback(methods::repo::service)
         .layer(layer_fn(LoggingMiddleware))
         .layer(Extension(Arc::new(Git::new(syntax_set))))
         .layer(Extension(db))
@@ -115,17 +125,6 @@ async fn main() {
         .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
         .await
         .unwrap();
-}
-
-fn static_css(content: &'static [u8]) -> impl Handler<()> {
-    move || async move {
-        let mut resp = Response::new(Body::from(content));
-        resp.headers_mut().insert(
-            http::header::CONTENT_TYPE,
-            HeaderValue::from_static("text/css"),
-        );
-        resp
-    }
 }
 
 #[instrument(skip(t))]

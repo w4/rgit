@@ -44,15 +44,38 @@ fn update_repository_metadata(scan_path: &Path, db: &sled::Db) {
         let description = std::fs::read(repository.join("description")).unwrap_or_default();
         let description = Some(String::from_utf8_lossy(&description)).filter(|v| !v.is_empty());
 
+        let git_repository = git2::Repository::open(scan_path.join(&relative)).unwrap();
+
         Repository {
             id,
             name,
             description,
             owner: None, // TODO read this from config
-            last_modified: OffsetDateTime::now_utc(),
+            last_modified: find_last_committed_time(&git_repository)
+                .unwrap_or(OffsetDateTime::UNIX_EPOCH),
         }
         .insert(db, relative);
     }
+}
+
+fn find_last_committed_time(repo: &git2::Repository) -> Result<OffsetDateTime, git2::Error> {
+    let mut timestamp = OffsetDateTime::UNIX_EPOCH;
+
+    for reference in repo.references()? {
+        let Ok(commit) = reference?.peel_to_commit() else {
+            continue;
+        };
+
+        let committed_time = commit.committer().when().seconds();
+        let committed_time = OffsetDateTime::from_unix_timestamp(committed_time)
+            .unwrap_or(OffsetDateTime::UNIX_EPOCH);
+
+        if committed_time > timestamp {
+            timestamp = committed_time;
+        }
+    }
+
+    Ok(timestamp)
 }
 
 fn update_repository_reflog(scan_path: &Path, db: &sled::Db) {

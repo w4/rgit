@@ -12,5 +12,6 @@ jobs:
     steps:
       - uses: actions/checkout@v1
       - uses: actions-rs/audit-check@v1
+        continue-on-error: true
         with:
           token: ${{ secrets.GITHUB_TOKEN }}

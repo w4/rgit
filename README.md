@@ -13,6 +13,11 @@ included for rendered READMEs and diffs.
 
 Includes a dark mode for late night committing.
 
+Your `SCAN_PATH` should contain (optionally nested) [bare repositories][], and a `config` file
+can be written with a `[gitweb.owner]` key to signify ownership.
+
+[bare repositories]: https://git-scm.com/book/en/v2/Git-on-the-Server-Getting-Git-on-a-Server
+
 Usage:
 
 ```
@@ -40,4 +45,62 @@ OPTIONS:
 
     -V, --version
             Print version information
+```
+
+### Installation
+
+#### From Source
+
+rgit can be installed from source by cloning, building using [`cargo`][] and running the binary:
+
+```bash
+$ git clone https://github.com/w4/rgit
+$ cd rgit
+$ cargo build --release
+$ ./target/release/rgit [::]:3333 /path/to/my-repos -d /tmp/rgit-cache.db
+```
+
+[`cargo`]: https://www.rust-lang.org/
+
+#### NixOS
+
+Running rgit on NixOS is extremely simple, simply import the module into your `flake.nix` and use the
+provided service:
+
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.05";
+
+    rgit = {
+      url = "github:w4/rgit";
+      inputs.nixpkgs = "nixpkgs";
+    };
+  };
+
+  outputs = { nixpkgs, ... }: {
+    nixosConfigurations.mySystem = nixpkgs.lib.nixosSystem {
+      modules = [
+        rgit.nixosModules.default
+        {
+          services.rgit = {
+            enable = true;
+            bindAddress = "[::]:3333";
+            dbStorePath = "/tmp/rgit.db";
+            repositoryStorePath = "/path/to/my-repos";
+          };
+        }
+        ...
+      ];
+    };
+  };
+}
+```
+
+#### Docker
+
+Running rgit in Docker is also simple, just mount the directory containing your repositories to `/git`:
+
+```bash
+$ docker run --mount type=bind,source=/path/to/my-repos,target=/git -it ghcr.io/w4/rgit:main
 ```

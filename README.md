@@ -54,10 +54,10 @@ OPTIONS:
 rgit can be installed from source by cloning, building using [`cargo`][] and running the binary:
 
 ```bash
-$ git clone https://github.com/w4/rgit
-$ cd rgit
-$ cargo build --release
-$ ./target/release/rgit [::]:3333 /path/to/my-repos -d /tmp/rgit-cache.db
+git clone https://github.com/w4/rgit
+cd rgit
+cargo build --release
+./target/release/rgit [::]:3333 /path/to/my-repos -d /tmp/rgit-cache.db
 ```
 
 [`cargo`]: https://www.rust-lang.org/
@@ -102,5 +102,6 @@ provided service:
 Running rgit in Docker is also simple, just mount the directory containing your repositories to `/git`:
 
 ```bash
-$ docker run --mount type=bind,source=/path/to/my-repos,target=/git -it ghcr.io/w4/rgit:main
+docker run --mount type=bind,source=/path/to/my-repos,target=/git \
+  -it ghcr.io/w4/rgit:main
 ```

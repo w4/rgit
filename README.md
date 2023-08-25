@@ -16,6 +16,18 @@ Includes a dark mode for late night committing.
 Your `SCAN_PATH` should contain (optionally nested) [bare repositories][], and a `config` file
 can be written with a `[gitweb.owner]` key to signify ownership.
 
+Example given:
+```text
+$ cat config
+[core]
+	repositoryformatversion = 0
+	filemode = true
+	bare = true
+[gitweb]
+	owner = "Jordan Doyle"
+$
+```
+
 [bare repositories]: https://git-scm.com/book/en/v2/Git-on-the-Server-Getting-Git-on-a-Server
 
 Usage:

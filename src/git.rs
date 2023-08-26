@@ -139,7 +139,7 @@ impl OpenRepository {
 
             let mut tree_items = Vec::new();
 
-            for item in tree.iter() {
+            for item in &tree {
                 let object = item
                     .to_object(&repo)
                     .context("Expected item in tree to be object but it wasn't")?;

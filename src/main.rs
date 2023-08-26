@@ -92,6 +92,17 @@ async fn main() {
             .into_boxed_bytes(),
     );
 
+    let static_favicon = |content: &'static [u8]| {
+        move || async move {
+            let mut resp = Response::new(Body::from(content));
+            resp.headers_mut().insert(
+                http::header::CONTENT_TYPE,
+                HeaderValue::from_static("image/x-icon"),
+            );
+            resp
+        }
+    };
+
     let static_css = |content: &'static [u8]| {
         move || async move {
             let mut resp = Response::new(Body::from(content));
@@ -114,6 +125,10 @@ async fn main() {
         )
         .route("/highlight.css", get(static_css(css)))
         .route("/highlight-dark.css", get(static_css(dark_css)))
+        .route(
+            "/favicon.ico",
+            get(static_favicon(include_bytes!("../statics/favicon.ico"))),
+        )
         .fallback(methods::repo::service)
         .layer(layer_fn(LoggingMiddleware))
         .layer(Extension(Arc::new(Git::new(syntax_set))))

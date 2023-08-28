@@ -117,3 +117,11 @@ Running rgit in Docker is also simple, just mount the directory containing your 
 docker run --mount type=bind,source=/path/to/my-repos,target=/git \
   -it ghcr.io/w4/rgit:main
 ```
+
+#### Docker Compose
+
+An example `docker-compose.yml` is provided for those who prefer using Compose. To configure the UID and GID, the user is specified in `docker-compose.override.yml`. 
+
+An example override file has been has been provided with the repository. To use it, remove the `.example` extension from `docker-compose.override.yml.example`, and adjust the UID and GID to match the user that owns the directory containing your repositories.
+
+Afterwards, bring up the container with `docker-compose up` to make sure everything works.

@@ -128,3 +128,11 @@ An example `docker-compose.yml` is provided for those who prefer using Compose. 
 An example override file has been has been provided with the repository. To use it, remove the `.example` extension from `docker-compose.override.yml.example`, and adjust the UID and GID to match the user that owns the directory containing your repositories.
 
 Afterwards, bring up the container with `docker-compose up` to make sure everything works.
+
+### Notes
+
+#### not owned by current user
+
+When you get `message: "repository path '/git/orzklv-dots/' is not owned by current user"` in the
+logging, it means exactly that. It is a _git design choice_, only owner writes to the git
+repository. Match the `uid` what `rgit` started with the `uid` of the git repo on the filesystem.

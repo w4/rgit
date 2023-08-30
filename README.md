@@ -76,8 +76,8 @@ cargo build --release
 
 #### NixOS
 
-Running rgit on NixOS is extremely simple, simply import the module into your `flake.nix` and use the
-provided service:
+Running rgit on NixOS is extremely simple, simply import the module into your `flake.nix`
+and use the provided service:
 
 ```nix
 {
@@ -111,7 +111,8 @@ provided service:
 
 #### Docker
 
-Running rgit in Docker is also simple, just mount the directory containing your repositories to `/git`:
+Running rgit in Docker is also simple, just mount the directory containing your repositories to
+`/git`:
 
 ```bash
 docker run --mount type=bind,source=/path/to/my-repos,target=/git \
@@ -119,12 +120,17 @@ docker run --mount type=bind,source=/path/to/my-repos,target=/git \
   -it ghcr.io/w4/rgit:main
 ```
 
-**Note**: Take care to replace `$UID` and `$GID` with the UID and GID of the user that owns the directory containing your repositories or there will be errors! [See here](https://linuxhandbook.com/uid-linux/) to learn how to find the UID of a user.
+**Note**: Take care to replace `$UID` and `$GID` with the UID and GID of the user
+that owns the directory containing your repositories or there will be errors! [See
+here](https://linuxhandbook.com/uid-linux/) to learn how to find the UID of a user.
 
 #### Docker Compose
 
-An example `docker-compose.yml` is provided for those who prefer using Compose. To configure the UID and GID, the user is specified in `docker-compose.override.yml`. 
+An example `docker-compose.yml` is provided for those who prefer using Compose. To configure
+the UID and GID, the user is specified in `docker-compose.override.yml`.
 
-An example override file has been has been provided with the repository. To use it, remove the `.example` extension from `docker-compose.override.yml.example`, and adjust the UID and GID to match the user that owns the directory containing your repositories.
+An example override file has been has been provided with the repository. To use it, remove the
+`.example` extension from `docker-compose.override.yml.example`, and adjust the UID and GID to
+match the user that owns the directory containing your repositories.
 
 Afterwards, bring up the container with `docker-compose up` to make sure everything works.

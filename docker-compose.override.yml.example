@@ -1,0 +1,4 @@
+version: '3'
+services:
+  rgit:
+    user: 1000:1000

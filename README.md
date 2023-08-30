@@ -115,8 +115,11 @@ Running rgit in Docker is also simple, just mount the directory containing your 
 
 ```bash
 docker run --mount type=bind,source=/path/to/my-repos,target=/git \
+  --user $UID:$GID \
   -it ghcr.io/w4/rgit:main
 ```
+
+**Note**: Take care to replace `$UID` and `$GID` with the UID and GID of the user that owns the directory containing your repositories or there will be errors! [See here](https://linuxhandbook.com/uid-linux/) to learn how to find the UID of a user.
 
 #### Docker Compose
 

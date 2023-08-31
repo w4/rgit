@@ -142,3 +142,21 @@ Afterwards, bring up the container with `docker-compose up` to make sure everyth
 When you get `message: "repository path '/git/orzklv-dots/' is not owned by current user"` in the
 logging, it means exactly that. It is a _git design choice_, only owner writes to the git
 repository. Match the `uid` what `rgit` started with the `uid` of the git repo on the filesystem.
+
+##### Repository not exported
+
+Message `Git returned an error: Repository not exported` is like _"repo not yet exposed"_.
+
+Go to the `.git` directory and create file `git-daemon-export-ok`.
+
+```text
+$ cd /srv/rgit/rgit.git
+$ ls
+HEAD      config       hooks  objects      refs
+branches  description  info   packed-refs
+$ touch git-daemon-export-ok
+$ ls
+HEAD      config       git-daemon-export-ok  info     packed-refs
+branches  description  hooks                 objects  refs
+$
+```

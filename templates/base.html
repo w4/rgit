@@ -18,7 +18,15 @@
 
 {%- block nav -%}
 <nav>
-    <a href="/" class="active">index</a>
+    <div>
+        <a href="/" class="active">index</a>
+    </div>
+
+    <div class="grow"></div>
+
+    <div>
+        {%- block extra_nav_links %}{% endblock %}
+    </div>
 </nav>
 {%- endblock -%}
 

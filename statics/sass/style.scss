@@ -28,6 +28,11 @@ header {
 nav {
   margin-top: 2rem;
   border-bottom: solid 3px #ccc;
+  display: flex;
+
+  .grow {
+    flex-grow: 1;
+  }
 
   @media (prefers-color-scheme: dark) {
     border-bottom-color: $darkModeHighlightColour;

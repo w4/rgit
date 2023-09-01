@@ -7,6 +7,10 @@
 
 {% block tree_nav_class %}active{% endblock %}
 
+{% block extra_nav_links %}
+    <a href="?raw=true">plain</a>
+{% endblock %}
+
 {% block content %}
 <pre>{{ file.content|safe }}</pre>
 {% endblock %}

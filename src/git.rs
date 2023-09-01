@@ -80,6 +80,7 @@ impl OpenRepository {
         path: Option<PathBuf>,
         tree_id: Option<&str>,
         branch: Option<String>,
+        formatted: bool,
     ) -> Result<PathDestination> {
         let tree_id = tree_id
             .map(Oid::from_str)
@@ -119,7 +120,11 @@ impl OpenRepository {
                         .extension()
                         .or_else(|| path.file_name())
                         .map_or_else(|| Cow::Borrowed(""), OsStr::to_string_lossy);
-                    let content = format_file(blob.content(), &extension, &self.git.syntax_set)?;
+                    let content = if formatted {
+                        format_file(blob.content(), &extension, &self.git.syntax_set)?
+                    } else {
+                        String::from_utf8_lossy(blob.content()).to_string()
+                    };
 
                     return Ok(PathDestination::File(FileWithContent {
                         metadata: File {

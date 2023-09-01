@@ -4,7 +4,7 @@ use std::{
 };
 
 use askama::Template;
-use axum::{extract::Query, response::Response, Extension};
+use axum::{extract::Query, http, response::IntoResponse, response::Response, Extension};
 use serde::Deserialize;
 
 use crate::{
@@ -22,6 +22,8 @@ pub struct UriQuery {
     id: Option<String>,
     #[serde(rename = "h")]
     branch: Option<String>,
+    #[serde(default)]
+    raw: bool,
 }
 
 impl Display for UriQuery {
@@ -68,10 +70,23 @@ pub async fn handle(
 
     Ok(
         match open_repo
-            .path(child_path, query.id.as_deref(), query.branch.clone())
+            .path(
+                child_path,
+                query.id.as_deref(),
+                query.branch.clone(),
+                !query.raw,
+            )
             .await?
         {
             PathDestination::Tree(items) => into_response(&TreeView { repo, items, query }),
+            PathDestination::File(file) if query.raw => {
+                let headers = [(
+                    http::header::CONTENT_TYPE,
+                    http::HeaderValue::from_static("text/plain"),
+                )];
+
+                (headers, file.content).into_response()
+            }
             PathDestination::File(file) => into_response(&FileView { repo, file }),
         },
     )

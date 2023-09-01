@@ -21,6 +21,7 @@ clap = { version = "4.3.0", features = ["cargo", "derive"] }
 futures = "0.3"
 git2 = "0.17.2"
 hex = "0.4"
+humantime = "2.1"
 nom = "7.1"
 md5 = "0.7"
 moka = { version = "0.11.1", features = ["future"] }

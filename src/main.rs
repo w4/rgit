@@ -20,6 +20,9 @@ use axum::{
 };
 use bat::assets::HighlightingAssets;
 use clap::Parser;
+use once_cell::sync::{Lazy, OnceCell};
+use sha2::digest::FixedOutput;
+use sha2::Digest;
 use sled::Db;
 use syntect::html::ClassStyle;
 use tokio::{
@@ -39,6 +42,12 @@ mod methods;
 mod syntax_highlight;
 
 const CRATE_VERSION: &str = clap::crate_version!();
+
+static GLOBAL_CSS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/statics/css/style.css",));
+static GLOBAL_CSS_HASH: Lazy<Box<str>> = Lazy::new(|| build_asset_hash(GLOBAL_CSS));
+
+static HIGHLIGHT_CSS_HASH: OnceCell<Box<str>> = OnceCell::new();
+static DARK_HIGHLIGHT_CSS_HASH: OnceCell<Box<str>> = OnceCell::new();
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
@@ -114,6 +123,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .into_boxed_str()
             .into_boxed_bytes(),
     );
+    HIGHLIGHT_CSS_HASH.set(build_asset_hash(css)).unwrap();
 
     let dark_theme = bat_assets.get_theme("TwoDark");
     let dark_css =
@@ -123,6 +133,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .into_boxed_str()
             .into_boxed_bytes(),
     );
+    DARK_HIGHLIGHT_CSS_HASH
+        .set(build_asset_hash(dark_css))
+        .unwrap();
 
     let static_favicon = |content: &'static [u8]| {
         move || async move {
@@ -149,14 +162,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = Router::new()
         .route("/", get(methods::index::handle))
         .route(
-            "/style.css",
-            get(static_css(include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/statics/css/style.css"
-            )))),
+            &format!("/style-{}.css", *GLOBAL_CSS_HASH),
+            get(static_css(GLOBAL_CSS)),
         )
-        .route("/highlight.css", get(static_css(css)))
-        .route("/highlight-dark.css", get(static_css(dark_css)))
+        .route(
+            &format!("/highlight-{}.css", HIGHLIGHT_CSS_HASH.get().unwrap()),
+            get(static_css(css)),
+        )
+        .route(
+            &format!(
+                "/highlight-dark-{}.css",
+                DARK_HIGHLIGHT_CSS_HASH.get().unwrap()
+            ),
+            get(static_css(dark_css)),
+        )
         .route(
             "/favicon.ico",
             get(static_favicon(include_bytes!("../statics/favicon.ico"))),
@@ -221,6 +240,15 @@ async fn run_indexer(
         }
     })
     .await
+}
+
+#[must_use]
+pub fn build_asset_hash(v: &[u8]) -> Box<str> {
+    let mut hasher = sha2::Sha256::default();
+    hasher.update(v);
+    let mut out = hex::encode(hasher.finalize_fixed());
+    out.truncate(10);
+    Box::from(out)
 }
 
 #[instrument(skip(t))]

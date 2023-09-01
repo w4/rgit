@@ -1,8 +1,8 @@
 {% extends "repo/base.html" %}
 
 {%- block head %}
-    <link rel="stylesheet" type="text/css" href="/highlight.css" />
-    <link rel="stylesheet" type="text/css" href="/highlight-dark.css" />
+    <link rel="stylesheet" type="text/css" href="/highlight-{{ crate::HIGHLIGHT_CSS_HASH.get().unwrap() }}.css" />
+    <link rel="stylesheet" type="text/css" href="/highlight-dark-{{ crate::DARK_HIGHLIGHT_CSS_HASH.get().unwrap() }}.css" />
 {%- endblock -%}
 
 {% block diff_nav_class %}active{% endblock %}

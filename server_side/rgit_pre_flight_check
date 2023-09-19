@@ -1,0 +1,42 @@
+#!/bin/sh
+# rgit pre flight check
+# (early release)
+# does various (silent) tests
+# exits with error code EX_CONFIG on first failed test
+# Intented use is being executed by systemd service unit
+
+EX_CONFIG=78
+# comes from https://man.freebsd.org/cgi/man.cgi?query=sysexits
+
+SERVICE_SIZE=$( systemctl cat rgit.service 2>/dev/null | wc -l )
+if [ ${SERVICE_SIZE} -lt 4 ] ; then
+	echo "E: Line count of systemd rgit service is unlikely small."
+	echo "I: Is the rgit systemd service unit installed?"
+	echo "I:"
+	echo "I: Do know that you can start rgit without Systemd."
+	exit ${EX_CONFIG}
+fi
+
+# Does user exist?
+USER=$( systemctl cat rgit.service 2>/dev/null \
+	| awk -F= '$1 ~ /User/ { U = $2 } END { print U}' )
+if [ -z ${USER} ] ; then
+	echo "E: No username found in the systemd service unit."
+	exit ${EX_CONFIG}
+fi
+id ${USER} > /dev/null 2>&1
+if [ ${?} -gt 0 ] ; then
+	echo "E: \`id ${USER}\` failed."
+	echo "I: /usr/bin/rgitsss has an add user subcommand"
+	exit ${EX_CONFIG}
+fi
+
+DIR=idea # read from configuration file
+DIR=/srv/rgit/t
+if [ ! -d ${DIR} ] ; then
+	echo "E: Directory ${DIR} nout found"
+	exit ${EX_CONFIG}
+fi
+
+# all good
+exit 0

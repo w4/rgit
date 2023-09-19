@@ -1,0 +1,110 @@
+
+For autostarting `rgit` is a systemd service unit available.
+
+Rgit only opens only self owned files. Systemd helps with running the
+rgit proces as a dedicated user.
+
+Script rgit_pre_flight_check verifies if the user defined
+in the systemd unit, is available on the system.
+
+For dealing with self owned files, there is `rgitsss`. The triple s
+stands for Server Side Script.
+
+Default user for `rgitsss` is 'git'. For other username, set RGIT_ACCOUNT
+environment variable.  ( `export RGIT_ACCOUNT=foo` )
+
+
+Now much more about `rgitsss`.
+
+Try
+
+    rgitsss
+    rgitsss help
+
+for getting an idea what is to come.
+
+Commands, subcommands, like `adduser` and `mkdir` are root privileges needed.
+For the other subcommands also, unless you are willing to set and type in
+the password for the rgit user. That is why rgitsss is prefixed with sudo.
+
+Type along while reading
+
+    sudo rgitsss adduser
+
+    sudo rgitsss mkdir /srv/rgit
+    sudo rgitsss mkdir /srv/rgit/t
+    sudo rgitsss mkdir /srv/rgit/cache
+
+    sudo rgitsss clone https://gitlab.com/stappersg/bong /srv/rgit/t/bong.git
+
+    sudo rgitss publish /srv/rgit/t/bong.git
+
+Now it makes sense to start rgit
+
+    sudo systemctl start rgit
+
+and to visit the URL where you have rgit running, with a webbrowser.
+Notice the odd description. Reproduce it with
+
+    rgitsss describe /srv/rgit/t/bong.git
+
+Change it by
+
+    echo "a ping wrapper, reduces ping output while a server reboots" > nd
+    sudo rgitsss describe /srv/rgit/t/bong.git nd
+
+Now wait for the next rgit cache update, or force that by
+
+    sudo systemctl restart rgit
+
+Webbrowser shows updated description.
+
+For start upon reboot:
+
+    sudo systemctl enable rgit
+
+By design doesn't allow `rgit` writing. For "git writes" is SSH used.
+And for SSH access are ssh pub keys needed. Ask the people who you want
+to grant access to do
+
+    cat ~/.ssh/id_ed22519.pub  # or simular
+
+Collect the public keys in a text file, say "these_keys", then:
+
+    sudo rgitsss sshkeys these_keys
+
+See which SSH-keys are present by:
+
+    sudo rgitsss sshkeys
+
+
+And with a new git repository?
+
+    sudo rgitsss init /srv/rgit/t/baz.git
+    sudo rgitsss publish /srv/rgit/t/baz.git
+    echo "Proof of concept" > textfile
+    sudo rgitsss describe /srv/rgit/t/baz.git textfile
+
+
+Then at **other** place, either:
+
+    git clone git@rgit.example.com:/srv/rgit/t/baz.git
+    # with notice on empty git repository
+    cd baz
+    git branch -m main  # sets 'main' as branch name
+    $EDITOR content
+    git add content
+    git commit
+    git push
+
+or:
+
+    cd directory/with/git/repository
+    git remote add origin git@rgit.example.com:/srv/rgit/t/baz.git
+    git fetch origin
+    git push origin
+
+And splitting 'git@rgit.example.com:/srv/rgit/t/baz.git' from above
+into 'git', 'rgit.example.com' and '/srv/rgit/t/baz.git'. The 'git'
+is RGIT_ACCOUNT, 'rgit.example.com' server running `rgit`.
+The '/srv/rgit/t/baz.git' is the path of the rgitsss init command.

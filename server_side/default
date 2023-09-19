@@ -1,0 +1,22 @@
+#
+# File with `rgit` parameter values.
+# It will be read by the systemd service file as environment file.
+#
+# Bind address and port
+RGIT_BIND='[::]:49418'
+RGIT_BIND='127.0.0.1:49418'
+#
+# scan path top directory
+RGIT_PATH=/srv/rgit/t
+#
+RGIT_CACHE=/tmp/rgit
+#
+# mandatory
+RGIT_SHIM=--db-store
+#
+#
+# For what it is worth:
+# This file with environment variables exists because at the time of writing,
+# no real configuration file existed.
+#
+# Last Line

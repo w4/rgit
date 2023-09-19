@@ -1,0 +1,199 @@
+#!/usr/bin/bash
+#
+# rgitsss, rgit server side script
+#
+# Aid for
+# - creating a system user
+# - git clone as "system user"
+# - git init as "system user"
+# and more, use 'help' as subcommand to get them showed
+#
+
+if [ ${#} -lt 1 ] ; then
+    echo "E: missing subcommand"
+    echo "I: 'help' is a valid subcommand"
+    exit 1
+fi
+
+SUBCMD=${1}
+shift # every thing after subcommand are parameters
+PARAMS=${@}
+
+if [ "empty" = "empty${RGIT_ACCOUNT}" ] ; then
+    # Default
+    ACCOUNT=git
+else
+    # Pick up environment variable
+    ACCOUNT=${RGIT_ACCOUNT}
+fi
+
+rgitsss_help() {
+    cat << HELPTEXT
+
+rgitsss
+
+subcommando
+    what it is supposed to do
+adduser
+    adds user account \$RGIT_ACCOUNT and
+    creates file ~\$RGIT_ACCOUNT/.ssh/authorized_keys
+mkdir /full/path
+    Creates directory \`/full/path\`
+    and changes owner to \$RGIT_ACCOUNT
+init /full/path/project.git
+    Does a \`git init --bare /full/path/project.git\`
+    as user \$RGIT_ACCOUNT
+clone URL /full/path/project.git
+    Does a \`git clone --bare URL /full/path/project.git\`
+    as user \$RGIT_ACCOUNT
+publish /full/path/project.git
+    Place "This git repo may be published marker"
+unpublish /full/path/project.git
+    Remove "This git repo may be published marker"
+describe /full/path/project.git
+    Print description of git repo
+describe /full/path/project.git textfile
+    Overwrite description of git repo with textfile
+sshkeys
+    Prints ~RGIT_ACCOUNT.ssh/authorized_keys
+sshkeys textfile
+    Overwrite ~RGIT_ACCOUNT.ssh/authorized_keys with textfile
+help
+    Prints this help text
+?
+    Same as help
+
+\$RGIT_ACCOUNT defaults to git
+
+HELPTEXT
+}
+
+rgitsss_adduser() {
+    adduser --system \
+        --shell /usr/bin/git-shell \
+        --gecos "Git Repository" \
+        --home /home/${ACCOUNT} \
+        ${ACCOUNT}  \
+    && \
+    su ${ACCOUNT} --shell=/usr/bin/bash \
+        --login \
+        --command="umask 0077 && mkdir .ssh" \
+    && \
+    su ${ACCOUNT} --shell=/usr/bin/bash \
+        --login \
+        --command="umask 0077 && touch .ssh/authorized"
+}
+
+rgitsss_clone() {
+    if [ -n "${2}" ] ; then
+	URL=${1}
+	DIR=$( dirname ${2} )
+	BASE=$( basename ${2} )
+    else
+        echo "E: not enough parameters"
+	echo "I: require params: URL /full/path/new_git_repo"
+	exit 1
+    fi
+    su ${ACCOUNT} --shell=/usr/bin/bash \
+        --command="cd ${DIR} && git clone --bare ${URL} ${BASE}"
+}
+
+rgitsss_init() {
+    if [ -n "${1}" ] ; then
+	DIR=$( dirname ${1} )
+	BASE=$( basename ${1} )
+    else
+        echo "E: not enough parameters"
+	echo "I: Provide /full/path/new_git_repo"
+	exit 1
+    fi
+    COMMAND="cd ${DIR} && "  # for avoiding a very long physical line
+    COMMAND="${COMMAND}git init --bare --initial-branch=main ${BASE}"
+    su ${ACCOUNT} --shell=/usr/bin/bash \
+        --command="${COMMAND}"
+    su ${ACCOUNT} --shell=/usr/bin/bash \
+        --command="cd ${DIR}/${BASE} && git pack-refs --all"
+}
+
+rgitsss_describe() {
+    if [ -n "${2}" ] ; then
+        cat ${2} | \
+        su ${ACCOUNT} --shell=/usr/bin/bash \
+            --command="tee ${1}/description > /dev/null"
+    else
+        # just print it
+        cat ${1}/description || echo "E: Invalid git repo path"
+    fi
+}
+
+rgitsss_sshkeys() {
+    if [ -n "${1}" ] ; then
+        cat ${1} | \
+        su ${ACCOUNT} --shell=/usr/bin/bash \
+            --login \
+            --command="umask 0077 && tee .ssh/authorized_keys > /dev/null"
+    else
+        # Print currently authorized SSH keys
+        su ${ACCOUNT} --shell=/usr/bin/bash \
+            --login \
+            --command="cat .ssh/authorized_keys"
+    fi
+}
+
+# FYI: Next subcommand is by design not documented in the help text.
+rgitsss_shell () {
+    if [ -n "${1}" ] ; then
+	DIR=${1}
+    else
+        echo "E: not enough parameters"
+	echo "I: Provide /full/path/top"
+	exit 1
+    fi
+    echo "I: Type \`exit\` for exiting the shell"
+    echo "I: The two warnings from bash are known (and consider acceptable)"
+    su ${ACCOUNT} --shell=/usr/bin/bash \
+        --command="cd ${DIR} && bash -o vi -i"
+}
+
+# Select
+case ${SUBCMD} in
+    ?|help)
+	rgitsss_help
+    ;;
+    adduser)
+	rgitsss_adduser
+    ;;
+    mkdir)
+        mkdir --parents ${PARAMS} && chown ${ACCOUNT} ${PARAMS}
+    ;;
+    clone)
+	rgitsss_clone ${PARAMS}
+    ;;
+    init)
+	rgitsss_init ${PARAMS}
+    ;;
+    publish)
+        su ${ACCOUNT} --shell=/usr/bin/bash \
+            --command="touch ${PARAMS}/git-daemon-export-ok"
+    ;;
+    unpublish)
+        su ${ACCOUNT} --shell=/usr/bin/bash \
+            --command="rm ${PARAMS}/git-daemon-export-ok"
+    ;;
+    describe)
+        rgitsss_describe ${PARAMS}
+    ;;
+    sshkeys)
+        rgitsss_sshkeys ${PARAMS}
+    ;;
+    shell)
+        rgitsss_shell ${PARAMS}
+    ;;
+    *)
+	echo "E: '${SUBCMD}' is not a valid subcommand"
+	echo "I: 'help' is a valid subcommand"
+	exit 1
+    ;;
+esac
+
+# l l

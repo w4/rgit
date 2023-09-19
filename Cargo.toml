@@ -53,3 +53,13 @@ rsass = "0.28.0"
 
 [package.metadata.deb]
 section = "web"
+maintainer-scripts = "server_side/"
+systemd-units = { enable = false }
+assets = [
+    [ "target/release/rgit", "/usr/bin/rgit", "755" ],
+    [ "server_side/default", "/etc/default/rgit", "644" ],
+    [ "server_side/config", "/etc/rgit/config", "644" ],
+    [ "server_side/rgitsss", "/usr/bin/rgitsss", "755" ],
+    [ "server_side/rgit_pre_flight_check", "/usr/bin/rgit_pre_flight_check", "755" ],
+    # FYI `cargo deb` installs the systemd service file
+]

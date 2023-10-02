@@ -33,7 +33,7 @@ sha2 = "0.10"
 syntect = "5"
 sled = { version = "0.34", features = ["compression"] }
 time = { version = "0.3", features = ["serde"] }
-timeago = { version = "0.4.1", default-features = false }
+timeago = { version = "0.4.2", default-features = false }
 tokio = { version = "1.19", features = ["full"] }
 tokio-util = { version = "0.7.3", features = ["io"] }
 tower = "0.4"

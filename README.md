@@ -33,7 +33,7 @@ $
 Usage:
 
 ```
-rgit 0.1.0
+rgit 0.1.1
 
 USAGE:
     rgit --db-store <DB_STORE> <BIND_ADDRESS> <SCAN_PATH>
@@ -51,6 +51,10 @@ OPTIONS:
             doesn't already exist
 
             The Sled database is very quick to generate, so this can be pointed to temporary storage
+    --refresh-interval <REFRESH_INTERVAL>
+            Configures the metadata refresh interval (eg. "never" or "60s")
+
+            [default: 5m]
 
     -h, --help
             Print help information
@@ -132,6 +136,15 @@ the UID and GID, the user is specified in `docker-compose.override.yml`.
 An example override file has been has been provided with the repository. To use it, remove the
 `.example` extension from `docker-compose.override.yml.example`, and adjust the UID and GID to
 match the user that owns the directory containing your repositories.
+
+To configure automatic refresh in Docker, an environment variable is also provided.
+
+```
+services:
+  rgit:
+    environment:
+	  - REFRESH_INTERVAL=5m
+```
 
 Afterwards, bring up the container with `docker-compose up` to make sure everything works.
 

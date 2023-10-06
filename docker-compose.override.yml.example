@@ -2,3 +2,5 @@ version: '3'
 services:
   rgit:
     user: 1000:1000
+    environment:
+	  - REFRESH_INTERVAL=5m

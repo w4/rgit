@@ -9,5 +9,8 @@ RUN cargo build --release
 FROM debian:bullseye-slim
 COPY --from=builder /sources/target/release/rgit /rgit
 
+COPY ./scripts/docker/entrypoint.sh .
+RUN chmod +x entrypoint.sh
+
 EXPOSE 8000
-ENTRYPOINT ["/rgit", "[::]:8000", "/git", "-d", "/tmp/rgit-cache.db"]
+ENTRYPOINT ["/entrypoint.sh"]

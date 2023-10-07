@@ -230,7 +230,7 @@ async fn run_indexer(
             loop {
                 tokio::select! {
                     _ = sighup.recv() => {},
-                    _ = build_sleeper() => {},
+                    () = build_sleeper() => {},
                 }
 
                 if indexer_wakeup_send.send(()).await.is_err() {

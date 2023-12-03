@@ -1,9 +1,11 @@
 use std::{
+    borrow::Cow,
     collections::HashSet,
     path::{Path, PathBuf},
 };
 
 use git2::Sort;
+use ini::Ini;
 use time::OffsetDateTime;
 use tracing::{info, info_span};
 
@@ -44,13 +46,14 @@ fn update_repository_metadata(scan_path: &Path, db: &sled::Db) {
         let description = std::fs::read(repository.join("description")).unwrap_or_default();
         let description = Some(String::from_utf8_lossy(&description)).filter(|v| !v.is_empty());
 
-        let git_repository = git2::Repository::open(scan_path.join(relative)).unwrap();
+        let repository_path = scan_path.join(relative);
+        let git_repository = git2::Repository::open(repository_path.clone()).unwrap();
 
         Repository {
             id,
             name,
             description,
-            owner: None, // TODO read this from config
+            owner: find_gitweb_owner(repository_path.as_path()),
             last_modified: find_last_committed_time(&git_repository)
                 .unwrap_or(OffsetDateTime::UNIX_EPOCH),
         }
@@ -206,4 +209,15 @@ fn discover_repositories(current: &Path, discovered_repos: &mut Vec<PathBuf>) {
             discover_repositories(&dir, discovered_repos);
         }
     }
+}
+
+fn find_gitweb_owner(repository_path: &Path) -> Option<Cow<'_, str>> {
+    // Load the Git config file and attempt to extract the owner from the "gitweb" section.
+    // If the owner is not found, an empty string is returned.
+    Ini::load_from_file(repository_path.join("config"))
+        .ok()?
+        .section(Some("gitweb"))
+        .and_then(|section| section.get("owner"))
+        .map(String::from)
+        .map(Cow::Owned)
 }

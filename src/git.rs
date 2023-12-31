@@ -615,8 +615,8 @@ fn fetch_diff_and_stats(
         1,
         1,
         &commit.id(),
-        "",
-        "",
+        commit.summary().unwrap_or(""),
+        commit.body().unwrap_or(""),
         &commit.author(),
         &mut EmailCreateOptions::default(),
     )

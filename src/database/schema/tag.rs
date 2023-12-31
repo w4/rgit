@@ -20,10 +20,10 @@ impl<'a> Tag<'a> {
         }
     }
 
-    pub fn insert(&self, batch: &TagTree, name: &str) {
-        batch
-            .insert(name.as_bytes(), bincode::serialize(self).unwrap())
-            .unwrap();
+    pub fn insert(&self, batch: &TagTree, name: &str) -> Result<(), anyhow::Error> {
+        batch.insert(name.as_bytes(), bincode::serialize(self)?)?;
+
+        Ok(())
     }
 }
 
@@ -44,8 +44,8 @@ impl TagTree {
         Self(tree)
     }
 
-    pub fn remove(&self, name: &str) -> bool {
-        self.0.remove(name).unwrap().is_some()
+    pub fn remove(&self, name: &str) -> Result<bool, sled::Error> {
+        self.0.remove(name).map(|v| v.is_some())
     }
 
     pub fn list(&self) -> HashSet<String> {

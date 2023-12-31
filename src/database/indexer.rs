@@ -6,11 +6,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use anyhow::Context;
 use git2::{ErrorCode, Reference, Sort};
 use ini::Ini;
 use time::OffsetDateTime;
 use tracing::{error, info, info_span, instrument, warn};
 
+use super::schema::tag::TagTree;
 use crate::database::schema::{
     commit::Commit,
     repository::{Repository, RepositoryId},
@@ -42,11 +44,21 @@ fn update_repository_metadata(scan_path: &Path, db: &sled::Db) {
     discover_repositories(scan_path, &mut discovered);
 
     for repository in discovered {
-        let relative = get_relative_path(scan_path, &repository);
+        let Some(relative) = get_relative_path(scan_path, &repository) else {
+            continue;
+        };
 
-        let id = Repository::open(db, relative)
-            .unwrap()
-            .map_or_else(|| RepositoryId::new(db), |v| v.get().id);
+        let id = match Repository::open(db, relative) {
+            Ok(v) => v.map_or_else(|| RepositoryId::new(db), |v| v.get().id),
+            Err(error) => {
+                // maybe we could nuke it ourselves, but we need to instantly trigger
+                // a reindex and we could enter into an infinite loop if there's a bug
+                // or something
+                error!(%error, "Failed to open repository index {}, please consider nuking database", relative.display());
+                continue;
+            }
+        };
+
         let Some(name) = relative.file_name().map(OsStr::to_string_lossy) else {
             continue;
         };
@@ -105,15 +117,29 @@ fn find_last_committed_time(repo: &git2::Repository) -> Result<OffsetDateTime, g
 
 #[instrument(skip(db))]
 fn update_repository_reflog(scan_path: &Path, db: &sled::Db) {
-    for (relative_path, db_repository) in Repository::fetch_all(db).unwrap() {
+    let repos = match Repository::fetch_all(db) {
+        Ok(v) => v,
+        Err(error) => {
+            error!(%error, "Failed to read repository index to update reflog, consider deleting database directory");
+            return;
+        }
+    };
+
+    for (relative_path, db_repository) in repos {
         let Some(git_repository) = open_repo(scan_path, &relative_path, db_repository.get(), db)
         else {
             continue;
         };
 
-        for reference in git_repository.references().unwrap() {
-            let reference = reference.unwrap();
+        let references = match git_repository.references() {
+            Ok(v) => v,
+            Err(error) => {
+                error!(%error, "Failed to read references for {relative_path}");
+                continue;
+            }
+        };
 
+        for reference in references.filter_map(Result::ok) {
             let reference_name = String::from_utf8_lossy(reference.name_bytes());
             if !reference_name.starts_with("refs/heads/")
                 && !reference_name.starts_with("refs/tags/")
@@ -183,56 +209,86 @@ fn branch_index_update(
 
 #[instrument(skip(db))]
 fn update_repository_tags(scan_path: &Path, db: &sled::Db) {
-    for (relative_path, db_repository) in Repository::fetch_all(db).unwrap() {
+    let repos = match Repository::fetch_all(db) {
+        Ok(v) => v,
+        Err(error) => {
+            error!(%error, "Failed to read repository index to update tags, consider deleting database directory");
+            return;
+        }
+    };
+
+    for (relative_path, db_repository) in repos {
         let Some(git_repository) = open_repo(scan_path, &relative_path, db_repository.get(), db)
         else {
             continue;
         };
 
-        let tag_tree = db_repository.get().tag_tree(db).unwrap();
-
-        let git_tags: HashSet<_> = git_repository
-            .references()
-            .unwrap()
-            .filter_map(Result::ok)
-            .filter(|v| v.name_bytes().starts_with(b"refs/tags/"))
-            .map(|v| String::from_utf8_lossy(v.name_bytes()).into_owned())
-            .collect();
-        let indexed_tags: HashSet<String> = tag_tree.list().into_iter().collect();
-
-        // insert any git tags that are missing from the index
-        for tag_name in git_tags.difference(&indexed_tags) {
-            let span = info_span!(
-                "tag_index_update",
-                reference = tag_name,
-                repository = relative_path
-            );
-            let _entered = span.enter();
-
-            let reference = git_repository.find_reference(tag_name).unwrap();
-
-            if let Ok(tag) = reference.peel_to_tag() {
-                info!("Inserting newly discovered tag to index");
-
-                Tag::new(tag.tagger().as_ref()).insert(&tag_tree, tag_name);
-            }
-        }
-
-        // remove any extra tags that the index has
-        // TODO: this also needs to check peel_to_tag
-        for tag_name in indexed_tags.difference(&git_tags) {
-            let span = info_span!(
-                "tag_index_update",
-                reference = tag_name,
-                repository = relative_path
-            );
-            let _entered = span.enter();
-
-            info!("Removing stale tag from index");
-
-            tag_tree.remove(tag_name);
+        if let Err(error) = tag_index_scan(&relative_path, db_repository.get(), db, &git_repository)
+        {
+            error!(%error, "Failed to update tags for {relative_path}");
         }
     }
+}
+
+#[instrument(skip(db_repository, db, git_repository))]
+fn tag_index_scan(
+    relative_path: &str,
+    db_repository: &Repository<'_>,
+    db: &sled::Db,
+    git_repository: &git2::Repository,
+) -> Result<(), anyhow::Error> {
+    let tag_tree = db_repository
+        .tag_tree(db)
+        .context("Failed to read tag index tree")?;
+
+    let git_tags: HashSet<_> = git_repository
+        .references()
+        .context("Failed to scan indexes on git repository")?
+        .filter_map(Result::ok)
+        .filter(|v| v.name_bytes().starts_with(b"refs/tags/"))
+        .map(|v| String::from_utf8_lossy(v.name_bytes()).into_owned())
+        .collect();
+    let indexed_tags: HashSet<String> = tag_tree.list().into_iter().collect();
+
+    // insert any git tags that are missing from the index
+    for tag_name in git_tags.difference(&indexed_tags) {
+        tag_index_update(tag_name, git_repository, &tag_tree)?;
+    }
+
+    // remove any extra tags that the index has
+    // TODO: this also needs to check peel_to_tag
+    for tag_name in indexed_tags.difference(&git_tags) {
+        tag_index_delete(tag_name, &tag_tree)?;
+    }
+
+    Ok(())
+}
+
+#[instrument(skip(git_repository, tag_tree))]
+fn tag_index_update(
+    tag_name: &str,
+    git_repository: &git2::Repository,
+    tag_tree: &TagTree,
+) -> Result<(), anyhow::Error> {
+    let reference = git_repository
+        .find_reference(tag_name)
+        .context("Failed to read newly discovered tag")?;
+
+    if let Ok(tag) = reference.peel_to_tag() {
+        info!("Inserting newly discovered tag to index");
+
+        Tag::new(tag.tagger().as_ref()).insert(tag_tree, tag_name)?;
+    }
+
+    Ok(())
+}
+
+#[instrument(skip(tag_tree))]
+fn tag_index_delete(tag_name: &str, tag_tree: &TagTree) -> Result<(), anyhow::Error> {
+    info!("Removing stale tag from index");
+    tag_tree.remove(tag_name)?;
+
+    Ok(())
 }
 
 #[instrument(skip(scan_path, db_repository, db))]
@@ -260,14 +316,22 @@ fn open_repo<P: AsRef<Path> + Debug>(
     }
 }
 
-fn get_relative_path<'a>(relative_to: &Path, full_path: &'a Path) -> &'a Path {
-    full_path.strip_prefix(relative_to).unwrap()
+fn get_relative_path<'a>(relative_to: &Path, full_path: &'a Path) -> Option<&'a Path> {
+    full_path.strip_prefix(relative_to).ok()
 }
 
 fn discover_repositories(current: &Path, discovered_repos: &mut Vec<PathBuf>) {
-    let dirs = std::fs::read_dir(current)
-        .unwrap()
-        .map(|v| v.unwrap().path())
+    let current = match std::fs::read_dir(current) {
+        Ok(v) => v,
+        Err(error) => {
+            error!(%error, "Failed to enter repository directory {}", current.display());
+            return;
+        }
+    };
+
+    let dirs = current
+        .filter_map(Result::ok)
+        .map(|v| v.path())
         .filter(|path| path.is_dir());
 
     for dir in dirs {

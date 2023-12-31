@@ -1,10 +1,12 @@
 use std::{
     borrow::Cow,
     collections::HashSet,
+    ffi::OsStr,
+    fmt::Debug,
     path::{Path, PathBuf},
 };
 
-use git2::{ErrorCode, Sort};
+use git2::{ErrorCode, Reference, Sort};
 use ini::Ini;
 use time::OffsetDateTime;
 use tracing::{error, info, info_span, instrument, warn};
@@ -27,11 +29,14 @@ pub fn run(scan_path: &Path, db: &sled::Db) {
 
     info!("Flushing to disk");
 
-    db.flush().unwrap();
+    if let Err(error) = db.flush() {
+        error!(%error, "Failed to flush database to disk");
+    }
 
     info!("Finished index update");
 }
 
+#[instrument(skip(db))]
 fn update_repository_metadata(scan_path: &Path, db: &sled::Db) {
     let mut discovered = Vec::new();
     discover_repositories(scan_path, &mut discovered);
@@ -42,12 +47,21 @@ fn update_repository_metadata(scan_path: &Path, db: &sled::Db) {
         let id = Repository::open(db, relative)
             .unwrap()
             .map_or_else(|| RepositoryId::new(db), |v| v.get().id);
-        let name = relative.file_name().unwrap().to_string_lossy();
+        let Some(name) = relative.file_name().map(OsStr::to_string_lossy) else {
+            continue;
+        };
         let description = std::fs::read(repository.join("description")).unwrap_or_default();
         let description = Some(String::from_utf8_lossy(&description)).filter(|v| !v.is_empty());
 
         let repository_path = scan_path.join(relative);
-        let git_repository = git2::Repository::open(repository_path.clone()).unwrap();
+
+        let git_repository = match git2::Repository::open(repository_path.clone()) {
+            Ok(v) => v,
+            Err(error) => {
+                warn!(%error, "Failed to open repository {} to update metadata, skipping", relative.display());
+                continue;
+            }
+        };
 
         Repository {
             id,
@@ -107,54 +121,64 @@ fn update_repository_reflog(scan_path: &Path, db: &sled::Db) {
                 continue;
             }
 
-            let span = info_span!(
-                "branch_index_update",
-                reference = reference_name.as_ref(),
-                repository = relative_path
-            );
-            let _entered = span.enter();
-
-            info!("Refreshing indexes");
-
-            let commit_tree = db_repository
-                .get()
-                .commit_tree(db, &reference_name)
-                .unwrap();
-
-            if let (Some(latest_indexed), Ok(latest_commit)) =
-                (commit_tree.fetch_latest_one(), reference.peel_to_commit())
-            {
-                if latest_commit.id().as_bytes() == &*latest_indexed.get().hash {
-                    info!("No commits since last index");
-                    continue;
-                }
-            }
-
-            // TODO: only scan revs from the last time we looked
-            let mut revwalk = git_repository.revwalk().unwrap();
-            revwalk.set_sorting(Sort::REVERSE).unwrap();
-            if let Err(error) = revwalk.push_ref(&reference_name) {
-                error!(%error, "Failed to revwalk reference");
-                continue;
-            }
-
-            let mut i = 0;
-            for rev in revwalk {
-                let commit = git_repository.find_commit(rev.unwrap()).unwrap();
-                let author = commit.author();
-                let committer = commit.committer();
-
-                Commit::new(&commit, &author, &committer).insert(&commit_tree, i);
-                i += 1;
-            }
-
-            // a complete and utter hack to remove potentially dropped commits from our tree,
-            // we'll need to add `clear()` to sled's tx api to remove this
-            for to_remove in (i + 1)..(i + 100) {
-                commit_tree.remove(to_remove.to_be_bytes()).unwrap();
+            if let Err(error) = branch_index_update(
+                &reference,
+                &reference_name,
+                &relative_path,
+                db_repository.get(),
+                db,
+                &git_repository,
+            ) {
+                error!(%error, "Failed to update reflog for {relative_path}@{reference_name}");
             }
         }
     }
+}
+
+#[instrument(skip(reference, db_repository, db, git_repository))]
+fn branch_index_update(
+    reference: &Reference<'_>,
+    reference_name: &str,
+    relative_path: &str,
+    db_repository: &Repository<'_>,
+    db: &sled::Db,
+    git_repository: &git2::Repository,
+) -> Result<(), anyhow::Error> {
+    info!("Refreshing indexes");
+
+    let commit_tree = db_repository.commit_tree(db, reference_name)?;
+
+    if let (Some(latest_indexed), Ok(latest_commit)) =
+        (commit_tree.fetch_latest_one(), reference.peel_to_commit())
+    {
+        if latest_commit.id().as_bytes() == &*latest_indexed.get().hash {
+            info!("No commits since last index");
+            return Ok(());
+        }
+    }
+
+    // TODO: only scan revs from the last time we looked
+    let mut revwalk = git_repository.revwalk()?;
+    revwalk.set_sorting(Sort::REVERSE)?;
+    revwalk.push_ref(reference_name)?;
+
+    let mut i = 0;
+    for rev in revwalk {
+        let commit = git_repository.find_commit(rev?)?;
+        let author = commit.author();
+        let committer = commit.committer();
+
+        Commit::new(&commit, &author, &committer).insert(&commit_tree, i);
+        i += 1;
+    }
+
+    // a complete and utter hack to remove potentially dropped commits from our tree,
+    // we'll need to add `clear()` to sled's tx api to remove this
+    for to_remove in (i + 1)..(i + 100) {
+        commit_tree.remove(to_remove.to_be_bytes())?;
+    }
+
+    Ok(())
 }
 
 #[instrument(skip(db))]
@@ -212,13 +236,13 @@ fn update_repository_tags(scan_path: &Path, db: &sled::Db) {
 }
 
 #[instrument(skip(scan_path, db_repository, db))]
-fn open_repo(
+fn open_repo<P: AsRef<Path> + Debug>(
     scan_path: &Path,
-    relative_path: &str,
+    relative_path: P,
     db_repository: &Repository<'_>,
     db: &sled::Db,
 ) -> Option<git2::Repository> {
-    match git2::Repository::open(scan_path.join(relative_path)) {
+    match git2::Repository::open(scan_path.join(relative_path.as_ref())) {
         Ok(v) => Some(v),
         Err(e) if e.code() == ErrorCode::NotFound => {
             warn!("Repository gone from disk, removing from db");
@@ -230,7 +254,7 @@ fn open_repo(
             None
         }
         Err(error) => {
-            warn!(%error, "Failed to reindex {relative_path}, skipping");
+            warn!(%error, "Failed to reindex, skipping");
             None
         }
     }

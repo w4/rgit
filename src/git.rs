@@ -26,9 +26,11 @@ use tracing::instrument;
 
 use crate::syntax_highlight::ComrakSyntectAdapter;
 
+type ReadmeCacheKey = (PathBuf, Option<Arc<str>>);
+
 pub struct Git {
     commits: Cache<Oid, Arc<Commit>>,
-    readme_cache: Cache<PathBuf, Option<(ReadmeFormat, Arc<str>)>>,
+    readme_cache: Cache<ReadmeCacheKey, Option<(ReadmeFormat, Arc<str>)>>,
     syntax_set: SyntaxSet,
 }
 
@@ -220,7 +222,7 @@ impl OpenRepository {
         let git = self.git.clone();
 
         git.readme_cache
-            .try_get_with(self.cache_key.clone(), async move {
+            .try_get_with((self.cache_key.clone(), self.branch.clone()), async move {
                 tokio::task::spawn_blocking(move || {
                     let repo = self.repo.lock();
 

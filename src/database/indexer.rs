@@ -4,10 +4,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use git2::Sort;
+use git2::{ErrorCode, Sort};
 use ini::Ini;
 use time::OffsetDateTime;
-use tracing::{error, info, info_span};
+use tracing::{error, info, info_span, instrument, warn};
 
 use crate::database::schema::{
     commit::Commit,
@@ -56,9 +56,17 @@ fn update_repository_metadata(scan_path: &Path, db: &sled::Db) {
             owner: find_gitweb_owner(repository_path.as_path()),
             last_modified: find_last_committed_time(&git_repository)
                 .unwrap_or(OffsetDateTime::UNIX_EPOCH),
+            default_branch: find_default_branch(&git_repository)
+                .ok()
+                .flatten()
+                .map(Cow::Owned),
         }
         .insert(db, relative);
     }
+}
+
+fn find_default_branch(repo: &git2::Repository) -> Result<Option<String>, git2::Error> {
+    Ok(repo.head()?.name().map(ToString::to_string))
 }
 
 fn find_last_committed_time(repo: &git2::Repository) -> Result<OffsetDateTime, git2::Error> {
@@ -81,9 +89,13 @@ fn find_last_committed_time(repo: &git2::Repository) -> Result<OffsetDateTime, g
     Ok(timestamp)
 }
 
+#[instrument(skip(db))]
 fn update_repository_reflog(scan_path: &Path, db: &sled::Db) {
     for (relative_path, db_repository) in Repository::fetch_all(db).unwrap() {
-        let git_repository = git2::Repository::open(scan_path.join(&relative_path)).unwrap();
+        let Some(git_repository) = open_repo(scan_path, &relative_path, db_repository.get(), db)
+        else {
+            continue;
+        };
 
         for reference in git_repository.references().unwrap() {
             let reference = reference.unwrap();
@@ -145,9 +157,13 @@ fn update_repository_reflog(scan_path: &Path, db: &sled::Db) {
     }
 }
 
+#[instrument(skip(db))]
 fn update_repository_tags(scan_path: &Path, db: &sled::Db) {
     for (relative_path, db_repository) in Repository::fetch_all(db).unwrap() {
-        let git_repository = git2::Repository::open(scan_path.join(&relative_path)).unwrap();
+        let Some(git_repository) = open_repo(scan_path, &relative_path, db_repository.get(), db)
+        else {
+            continue;
+        };
 
         let tag_tree = db_repository.get().tag_tree(db).unwrap();
 
@@ -191,6 +207,31 @@ fn update_repository_tags(scan_path: &Path, db: &sled::Db) {
             info!("Removing stale tag from index");
 
             tag_tree.remove(tag_name);
+        }
+    }
+}
+
+#[instrument(skip(scan_path, db_repository, db))]
+fn open_repo(
+    scan_path: &Path,
+    relative_path: &str,
+    db_repository: &Repository<'_>,
+    db: &sled::Db,
+) -> Option<git2::Repository> {
+    match git2::Repository::open(scan_path.join(relative_path)) {
+        Ok(v) => Some(v),
+        Err(e) if e.code() == ErrorCode::NotFound => {
+            warn!("Repository gone from disk, removing from db");
+
+            if let Err(error) = db_repository.delete(db, relative_path) {
+                warn!(%error, "Failed to delete dangling index");
+            }
+
+            None
+        }
+        Err(error) => {
+            warn!(%error, "Failed to reindex {relative_path}, skipping");
+            None
         }
     }
 }

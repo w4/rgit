@@ -1,6 +1,7 @@
 #![deny(clippy::pedantic)]
 
 use std::{
+    borrow::Cow,
     fmt::{Display, Formatter},
     net::SocketAddr,
     path::PathBuf,
@@ -9,6 +10,7 @@ use std::{
     time::Duration,
 };
 
+use anyhow::Context;
 use askama::Template;
 use axum::{
     body::Body,
@@ -20,6 +22,7 @@ use axum::{
 };
 use bat::assets::HighlightingAssets;
 use clap::Parser;
+use database::schema::{prefixes::TreePrefix, SCHEMA_VERSION};
 use once_cell::sync::{Lazy, OnceCell};
 use sha2::{digest::FixedOutput, Digest};
 use sled::Db;
@@ -30,7 +33,7 @@ use tokio::{
 };
 use tower_http::cors::CorsLayer;
 use tower_layer::layer_fn;
-use tracing::{error, info, instrument};
+use tracing::{error, info, instrument, warn};
 
 use crate::{git::Git, layers::logger::LoggingMiddleware};
 
@@ -95,7 +98,7 @@ impl FromStr for RefreshInterval {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), anyhow::Error> {
     let args: Args = Args::parse();
 
     let subscriber = tracing_subscriber::fmt();
@@ -103,11 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let subscriber = subscriber.pretty();
     subscriber.init();
 
-    let db = sled::Config::default()
-        .use_compression(true)
-        .path(&args.db_store)
-        .open()
-        .unwrap();
+    let db = open_db(&args)?;
 
     let indexer_wakeup_task =
         run_indexer(db.clone(), args.scan_path.clone(), args.refresh_interval);
@@ -190,13 +189,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .serve(app.into_make_service_with_connect_info::<SocketAddr>());
 
     tokio::select! {
-        res = server => res.map_err(Box::from),
-        res = indexer_wakeup_task => res.map_err(Box::from),
+        res = server => res.context("failed to run server"),
+        res = indexer_wakeup_task => res.context("failed to run indexer"),
         _ = tokio::signal::ctrl_c() => {
             info!("Received ctrl-c, shutting down");
             Ok(())
         }
     }
+}
+
+fn open_db(args: &Args) -> Result<Db, anyhow::Error> {
+    let db = sled::Config::default()
+        .use_compression(true)
+        .path(&args.db_store)
+        .open()
+        .context("Failed to open database")?;
+
+    let needs_schema_regen = match db.get(TreePrefix::schema_version())? {
+        Some(v) if v != SCHEMA_VERSION.as_bytes() => Some(Some(v)),
+        Some(_) => None,
+        None => Some(None),
+    };
+
+    if let Some(version) = needs_schema_regen {
+        let old_version = version
+            .as_deref()
+            .map_or(Cow::Borrowed("unknown"), String::from_utf8_lossy);
+
+        warn!("Clearing outdated database ({old_version} != {SCHEMA_VERSION})");
+
+        db.clear()?;
+        db.insert(TreePrefix::schema_version(), SCHEMA_VERSION)?;
+    }
+
+    Ok(db)
 }
 
 async fn run_indexer(

@@ -25,6 +25,9 @@ pub struct Repository<'a> {
     pub owner: Option<Cow<'a, str>>,
     /// The last time this repository was updated, currently read from the directory mtime
     pub last_modified: OffsetDateTime,
+    /// The default branch for Git operations
+    #[serde(borrow)]
+    pub default_branch: Option<Cow<'a, str>>,
 }
 
 pub type YokedRepository = Yoked<Repository<'static>>;
@@ -58,6 +61,17 @@ impl Repository<'_> {
                 bincode::serialize(self).unwrap(),
             )
             .unwrap();
+    }
+
+    pub fn delete<P: AsRef<Path>>(&self, database: &sled::Db, path: P) -> Result<()> {
+        for reference in self.heads(database) {
+            database.drop_tree(TreePrefix::commit_id(self.id, &reference))?;
+        }
+
+        database.drop_tree(TreePrefix::tag_id(self.id))?;
+        database.remove(TreePrefix::repository_id(path))?;
+
+        Ok(())
     }
 
     pub fn open<P: AsRef<Path>>(database: &sled::Db, path: P) -> Result<Option<YokedRepository>> {

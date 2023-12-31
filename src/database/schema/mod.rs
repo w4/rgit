@@ -9,3 +9,5 @@ pub mod repository;
 pub mod tag;
 
 pub type Yoked<T> = Yoke<T, Box<IVec>>;
+
+pub const SCHEMA_VERSION: &str = "1";

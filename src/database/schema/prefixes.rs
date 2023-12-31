@@ -5,6 +5,7 @@ use crate::database::schema::repository::RepositoryId;
 #[repr(u8)]
 pub enum TreePrefix {
     Repository = 0,
+    SchemaVersion = 1,
     Commit = 100,
     Tag = 101,
 }
@@ -44,5 +45,9 @@ impl TreePrefix {
         prefixed.extend_from_slice(&repository.to_ne_bytes());
 
         prefixed
+    }
+
+    pub fn schema_version() -> &'static [u8] {
+        &[TreePrefix::SchemaVersion as u8]
     }
 }

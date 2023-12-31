@@ -84,7 +84,13 @@ pub async fn get_branch_commits(
         return Ok(tag_tree);
     }
 
-    for branch in DEFAULT_BRANCHES {
+    for branch in repository
+        .get()
+        .default_branch
+        .as_deref()
+        .into_iter()
+        .chain(DEFAULT_BRANCHES.into_iter())
+    {
         let commit_tree = repository.get().commit_tree(database, branch)?;
         let commits = commit_tree.fetch_latest(amount, offset).await;
 

@@ -13,5 +13,12 @@
 {% endblock %}
 
 {% block content %}
-<pre>{{ file.content|safe }}</pre>
+<pre>
+    {%- match file.content -%}
+        {%- when crate::git::Content::Text with (content) -%}
+            {{- content|safe -}}
+        {%- when crate::git::Content::Binary with (_) -%}
+            &lt;binary file not displayed&gt;
+    {%- endmatch -%}
+</pre>
 {% endblock %}

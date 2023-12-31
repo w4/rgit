@@ -8,6 +8,7 @@ use std::{
 };
 
 use anyhow::{anyhow, Context, Result};
+use axum::response::IntoResponse;
 use bytes::{BufMut, Bytes, BytesMut};
 use comrak::{ComrakOptions, ComrakPlugins};
 use git2::{
@@ -126,10 +127,15 @@ impl OpenRepository {
                         .extension()
                         .or_else(|| path.file_name())
                         .map_or_else(|| Cow::Borrowed(""), OsStr::to_string_lossy);
-                    let content = if formatted {
-                        format_file(blob.content(), &extension, &self.git.syntax_set)?
-                    } else {
-                        String::from_utf8_lossy(blob.content()).to_string()
+                    let content = match (formatted, blob.is_binary()) {
+                        (true, true) => Content::Binary(vec![]),
+                        (true, false) => Content::Text(
+                            format_file(blob.content(), &extension, &self.git.syntax_set)?.into(),
+                        ),
+                        (false, true) => Content::Binary(blob.content().to_vec()),
+                        (false, false) => Content::Text(
+                            String::from_utf8_lossy(blob.content()).to_string().into(),
+                        ),
                     };
 
                     return Ok(PathDestination::File(FileWithContent {
@@ -464,7 +470,38 @@ pub struct File {
 #[derive(Debug)]
 pub struct FileWithContent {
     pub metadata: File,
-    pub content: String,
+    pub content: Content,
+}
+
+#[derive(Debug)]
+pub enum Content {
+    Text(Cow<'static, str>),
+    Binary(Vec<u8>),
+}
+
+impl IntoResponse for Content {
+    fn into_response(self) -> axum::response::Response {
+        use axum::http;
+
+        match self {
+            Self::Text(t) => {
+                let headers = [(
+                    http::header::CONTENT_TYPE,
+                    http::HeaderValue::from_static("text/plain; charset=UTF-8"),
+                )];
+
+                (headers, t).into_response()
+            }
+            Self::Binary(b) => {
+                let headers = [(
+                    http::header::CONTENT_TYPE,
+                    http::HeaderValue::from_static("application/octet-stream"),
+                )];
+
+                (headers, b).into_response()
+            }
+        }
+    }
 }
 
 #[derive(Debug)]

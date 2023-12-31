@@ -6,7 +6,6 @@ use std::{
 use askama::Template;
 use axum::{
     extract::Query,
-    http,
     response::{IntoResponse, Response},
     Extension,
 };
@@ -86,14 +85,7 @@ pub async fn handle(
                 branch: query.branch.clone(),
                 query,
             }),
-            PathDestination::File(file) if query.raw => {
-                let headers = [(
-                    http::header::CONTENT_TYPE,
-                    http::HeaderValue::from_static("text/plain"),
-                )];
-
-                (headers, file.content).into_response()
-            }
+            PathDestination::File(file) if query.raw => file.content.into_response(),
             PathDestination::File(file) => into_response(&FileView {
                 repo,
                 file,

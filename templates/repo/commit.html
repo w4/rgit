@@ -36,8 +36,8 @@
     </tr>
     {%- endfor %}
     <tr>
-        <th>download (tar.gz)</th>
-        <td colspan="2"><pre><a href="/{{ repo.display() }}/snapshot?{% if let Some(id) = id %}id={{ id }}{% else %}h={{ dl_branch }}{% endif %}">{{ id.as_deref().unwrap_or(dl_branch.as_ref()) }}</a></pre></td>
+        <th>download</th>
+        <td colspan="2"><pre><a href="/{{ repo.display() }}/snapshot?{% if let Some(id) = id %}id={{ id }}{% else %}h={{ dl_branch }}{% endif %}">{{ id.as_deref().unwrap_or(dl_branch.as_ref()) }}.tar.gz</a></pre></td>
     </tr>
     </tbody>
 </table>

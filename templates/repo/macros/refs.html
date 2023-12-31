@@ -41,7 +41,7 @@
     {% for (name, tag) in tags -%}
     <tr>
         <td><a href="/{{ repo.display() }}/tag/?h={{ name }}">{{- name -}}</a></td>
-        <td></td>
+        <td><a href="/{{ repo.display() }}/snapshot?h={{ name }}">{{- name -}}.tar.gz</a></td>
         <td>
             {% if let Some(tagger) = tag.get().tagger -%}
             <img src="https://www.gravatar.com/avatar/{{ tagger.email|md5 }}?s=13&d=retro" width="13" height="13">

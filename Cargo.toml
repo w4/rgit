@@ -33,10 +33,13 @@ serde = { version = "1.0", features = ["derive", "rc"] }
 sha2 = "0.10"
 syntect = "5"
 sled = { version = "0.34", features = ["compression"] }
+tar = "0.4"
+flate2 = "1.0"
 time = { version = "0.3", features = ["serde"] }
 timeago = { version = "0.4.2", default-features = false }
 tokio = { version = "1.19", features = ["full"] }
 tokio-util = { version = "0.7.3", features = ["io"] }
+tokio-stream = "0.1"
 tower = "0.4"
 tower-service = "0.3"
 tower-layer = "0.3"

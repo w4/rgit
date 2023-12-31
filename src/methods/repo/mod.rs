@@ -4,6 +4,7 @@ mod diff;
 mod log;
 mod refs;
 mod smart_git;
+mod snapshot;
 mod summary;
 mod tag;
 mod tree;
@@ -32,6 +33,7 @@ use self::{
     log::handle as handle_log,
     refs::handle as handle_refs,
     smart_git::handle as handle_smart_git,
+    snapshot::handle as handle_snapshot,
     summary::handle as handle_summary,
     tag::handle as handle_tag,
     tree::handle as handle_tree,
@@ -89,6 +91,7 @@ where
         Some("diff") => h!(handle_diff),
         Some("patch") => h!(handle_patch),
         Some("tag") => h!(handle_tag),
+        Some("snapshot") => h!(handle_snapshot),
         Some(v) => {
             uri_parts.push(v);
 

@@ -7,12 +7,12 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{Context, Result};
-use bytes::{Bytes, BytesMut};
+use anyhow::{anyhow, Context, Result};
+use bytes::{BufMut, Bytes, BytesMut};
 use comrak::{ComrakOptions, ComrakPlugins};
 use git2::{
     DiffFormat, DiffLineType, DiffOptions, DiffStatsFormat, Email, EmailCreateOptions, ObjectType,
-    Oid, Signature,
+    Oid, Signature, TreeWalkResult,
 };
 use moka::future::Cache;
 use parking_lot::Mutex;
@@ -22,7 +22,7 @@ use syntect::{
     util::LinesWithEndings,
 };
 use time::OffsetDateTime;
-use tracing::instrument;
+use tracing::{error, instrument, warn};
 
 use crate::syntax_highlight::ComrakSyntectAdapter;
 
@@ -272,6 +272,16 @@ impl OpenRepository {
             .await
     }
 
+    pub async fn default_branch(self: Arc<Self>) -> Result<Option<String>> {
+        tokio::task::spawn_blocking(move || {
+            let repo = self.repo.lock();
+            let head = repo.head().context("Couldn't find HEAD of repository")?;
+            Ok(head.shorthand().map(ToString::to_string))
+        })
+        .await
+        .context("Failed to join Tokio task")?
+    }
+
     #[instrument(skip(self))]
     pub async fn latest_commit(self: Arc<Self>) -> Result<Commit> {
         tokio::task::spawn_blocking(move || {
@@ -297,6 +307,87 @@ impl OpenRepository {
         })
         .await
         .context("Failed to join Tokio task")?
+    }
+
+    #[instrument(skip_all)]
+    pub async fn archive(
+        self: Arc<Self>,
+        res: tokio::sync::mpsc::Sender<Result<Bytes, anyhow::Error>>,
+        cont: tokio::sync::oneshot::Sender<()>,
+        commit: Option<&str>,
+    ) -> Result<(), anyhow::Error> {
+        const BUFFER_CAP: usize = 512 * 1024;
+
+        let commit = commit
+            .map(Oid::from_str)
+            .transpose()
+            .context("failed to build oid")?;
+
+        tokio::task::spawn_blocking(move || {
+            let buffer = BytesMut::with_capacity(BUFFER_CAP + 1024);
+
+            let flate = flate2::write::GzEncoder::new(buffer.writer(), flate2::Compression::fast());
+            let mut archive = tar::Builder::new(flate);
+
+            let repo = self.repo.lock();
+
+            let tree = if let Some(commit) = commit {
+                repo.find_commit(commit)?.tree()?
+            } else if let Some(reference) = &self.branch {
+                repo.resolve_reference_from_short_name(reference)?
+                    .peel_to_tree()?
+            } else {
+                repo.head()
+                    .context("Couldn't find HEAD of repository")?
+                    .peel_to_tree()?
+            };
+
+            // tell the web server it can send response headers to the requester
+            if cont.send(()).is_err() {
+                return Err(anyhow!("requester gone"));
+            }
+
+            let mut callback = |root: &str, entry: &git2::TreeEntry| -> TreeWalkResult {
+                if let Ok(blob) = entry.to_object(&repo).unwrap().peel_to_blob() {
+                    let path =
+                        Path::new(root).join(String::from_utf8_lossy(entry.name_bytes()).as_ref());
+
+                    let mut header = tar::Header::new_gnu();
+                    if let Err(error) = header.set_path(&path) {
+                        warn!(%error, "Attempted to write invalid path to archive");
+                        return TreeWalkResult::Skip;
+                    }
+                    header.set_size(blob.size() as u64);
+                    #[allow(clippy::cast_sign_loss)]
+                    header.set_mode(entry.filemode() as u32);
+                    header.set_cksum();
+
+                    if let Err(error) = archive.append(&header, blob.content()) {
+                        error!(%error, "Failed to write blob to archive");
+                        return TreeWalkResult::Abort;
+                    }
+                }
+
+                if archive.get_ref().get_ref().get_ref().len() >= BUFFER_CAP {
+                    let b = archive.get_mut().get_mut().get_mut().split().freeze();
+                    if let Err(error) = res.blocking_send(Ok(b)) {
+                        error!(%error, "Failed to send buffer to client");
+                        return TreeWalkResult::Abort;
+                    }
+                }
+
+                TreeWalkResult::Ok
+            };
+
+            tree.walk(git2::TreeWalkMode::PreOrder, &mut callback)?;
+
+            res.blocking_send(Ok(archive.into_inner()?.finish()?.into_inner().freeze()))?;
+
+            Ok::<_, anyhow::Error>(())
+        })
+        .await??;
+
+        Ok(())
     }
 
     #[instrument(skip(self))]

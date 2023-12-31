@@ -17,6 +17,8 @@ pub struct View {
     pub repo: Repository,
     pub commit: Arc<Commit>,
     pub branch: Option<Arc<str>>,
+    pub dl_branch: Arc<str>,
+    pub id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -33,8 +35,23 @@ pub async fn handle(
     Query(query): Query<UriQuery>,
 ) -> Result<Response> {
     let open_repo = git.repo(repository_path, query.branch.clone()).await?;
-    let commit = if let Some(commit) = query.id {
-        open_repo.commit(&commit).await?
+
+    let dl_branch = if let Some(branch) = query.branch.clone() {
+        branch
+    } else {
+        Arc::from(
+            open_repo
+                .clone()
+                .default_branch()
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| "master".to_string()),
+        )
+    };
+
+    let commit = if let Some(commit) = query.id.as_deref() {
+        open_repo.commit(commit).await?
     } else {
         Arc::new(open_repo.latest_commit().await?)
     };
@@ -43,5 +60,7 @@ pub async fn handle(
         repo,
         commit,
         branch: query.branch,
+        id: query.id,
+        dl_branch,
     }))
 }

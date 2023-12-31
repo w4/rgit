@@ -31,6 +31,10 @@
             </td>
         </tr>
     {% endif %}
+    <tr>
+        <th>download (tar.gz)</th>
+        <td colspan="2"><pre><a href="/{{ repo.display() }}/snapshot?h={{ tag.name }}">{{ tag.name }}</a></pre></td>
+    </tr>
     </tbody>
 </table>
 

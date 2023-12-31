@@ -1,4 +1,5 @@
 {% import "macros/refs.html" as refs %}
+{% import "macros/link.html" as link %}
 {% extends "repo/base.html" %}
 
 {% block log_nav_class %}active{% endblock %}
@@ -10,11 +11,7 @@
 
 {% if let Some(next_offset) = next_offset %}
 <div class="mt-2 text-center">
-    {% if let Some(branch) = branch %}
-        <a href="?h={{ branch }}&ofs={{ next_offset }}">[next]</a>
-    {% else %}
-        <a href="?ofs={{ next_offset }}">[next]</a>
-    {% endif %}
+    <a href="?ofs={{ next_offset }}{% call link::maybe_branch_suffix(branch) %}">[next]</a>
 </div>
 {% endif %}
 {% endblock %}

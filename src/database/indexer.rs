@@ -7,7 +7,7 @@ use std::{
 use git2::Sort;
 use ini::Ini;
 use time::OffsetDateTime;
-use tracing::{info, info_span};
+use tracing::{error, info, info_span};
 
 use crate::database::schema::{
     commit::Commit,
@@ -89,7 +89,9 @@ fn update_repository_reflog(scan_path: &Path, db: &sled::Db) {
             let reference = reference.unwrap();
 
             let reference_name = String::from_utf8_lossy(reference.name_bytes());
-            if !reference_name.starts_with("refs/heads/") {
+            if !reference_name.starts_with("refs/heads/")
+                && !reference_name.starts_with("refs/tags/")
+            {
                 continue;
             }
 
@@ -119,7 +121,10 @@ fn update_repository_reflog(scan_path: &Path, db: &sled::Db) {
             // TODO: only scan revs from the last time we looked
             let mut revwalk = git_repository.revwalk().unwrap();
             revwalk.set_sorting(Sort::REVERSE).unwrap();
-            revwalk.push_ref(&reference_name).unwrap();
+            if let Err(error) = revwalk.push_ref(&reference_name) {
+                error!(%error, "Failed to revwalk reference");
+                continue;
+            }
 
             let mut i = 0;
             for rev in revwalk {

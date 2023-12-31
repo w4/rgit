@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::io::Write;
+use std::{collections::HashMap, io::Write};
 
 use comrak::adapters::SyntaxHighlighterAdapter;
 use syntect::{

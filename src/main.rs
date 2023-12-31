@@ -21,8 +21,7 @@ use axum::{
 use bat::assets::HighlightingAssets;
 use clap::Parser;
 use once_cell::sync::{Lazy, OnceCell};
-use sha2::digest::FixedOutput;
-use sha2::Digest;
+use sha2::{digest::FixedOutput, Digest};
 use sled::Db;
 use syntect::html::ClassStyle;
 use tokio::{

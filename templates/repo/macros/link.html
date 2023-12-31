@@ -1,0 +1,3 @@
+{%- macro maybe_branch(branch) -%}{% if let Some(branch) = branch %}?h={{ branch }}{% endif %}{%- endmacro -%}
+
+{%- macro maybe_branch_suffix(branch) -%}{% if let Some(branch) = branch %}&h={{ branch }}{% endif %}{%- endmacro -%}

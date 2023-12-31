@@ -66,11 +66,22 @@ pub async fn get_branch_commits(
     amount: usize,
     offset: usize,
 ) -> Result<Vec<YokedCommit>> {
-    let reference = branch.map(|branch| format!("refs/heads/{branch}"));
+    if let Some(reference) = branch {
+        let commit_tree = repository
+            .get()
+            .commit_tree(database, &format!("refs/heads/{reference}"))?;
+        let commit_tree = commit_tree.fetch_latest(amount, offset).await;
 
-    if let Some(reference) = reference {
-        let commit_tree = repository.get().commit_tree(database, &reference)?;
-        return Ok(commit_tree.fetch_latest(amount, offset).await);
+        if !commit_tree.is_empty() {
+            return Ok(commit_tree);
+        }
+
+        let tag_tree = repository
+            .get()
+            .commit_tree(database, &format!("refs/tags/{reference}"))?;
+        let tag_tree = tag_tree.fetch_latest(amount, offset).await;
+
+        return Ok(tag_tree);
     }
 
     for branch in DEFAULT_BRANCHES {

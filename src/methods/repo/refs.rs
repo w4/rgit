@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use anyhow::Context;
 use askama::Template;
@@ -17,6 +17,7 @@ use crate::{
 pub struct View {
     repo: Repository,
     refs: Refs,
+    branch: Option<Arc<str>>,
 }
 
 #[allow(clippy::unused_async)]
@@ -46,5 +47,6 @@ pub async fn handle(
     Ok(into_response(&View {
         repo,
         refs: Refs { heads, tags },
+        branch: None,
     }))
 }

@@ -1,3 +1,4 @@
+{% import "macros/link.html" as link %}
 {% extends "repo/base.html" %}
 
 {% block head %}
@@ -8,7 +9,7 @@
 {% block tree_nav_class %}active{% endblock %}
 
 {% block extra_nav_links %}
-    <a href="?raw=true">plain</a>
+    <a href="?raw=true{% call link::maybe_branch_suffix(branch) %}">plain</a>
 {% endblock %}
 
 {% block content %}

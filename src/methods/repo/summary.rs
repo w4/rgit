@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use anyhow::Context;
 use askama::Template;
@@ -20,6 +20,7 @@ pub struct View<'a> {
     repo: Repository,
     refs: Refs,
     commit_list: Vec<&'a crate::database::schema::commit::Commit<'a>>,
+    branch: Option<Arc<str>>,
 }
 
 pub async fn handle(
@@ -51,6 +52,7 @@ pub async fn handle(
         repo,
         refs: Refs { heads, tags },
         commit_list,
+        branch: None,
     }))
 }
 

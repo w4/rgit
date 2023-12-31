@@ -14,8 +14,10 @@ use httparse::Status;
 use tokio_util::io::StreamReader;
 use tracing::warn;
 
-use crate::methods::repo::{Repository, RepositoryPath, Result};
-use crate::StatusCode;
+use crate::{
+    methods::repo::{Repository, RepositoryPath, Result},
+    StatusCode,
+};
 
 #[allow(clippy::unused_async)]
 pub async fn handle(

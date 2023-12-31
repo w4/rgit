@@ -11,8 +11,8 @@ use anyhow::{Context, Result};
 use bytes::{Bytes, BytesMut};
 use comrak::{ComrakOptions, ComrakPlugins};
 use git2::{
-    BranchType, DiffFormat, DiffLineType, DiffOptions, DiffStatsFormat, Email, EmailCreateOptions,
-    ObjectType, Oid, Signature,
+    DiffFormat, DiffLineType, DiffOptions, DiffStatsFormat, Email, EmailCreateOptions, ObjectType,
+    Oid, Signature,
 };
 use moka::future::Cache;
 use parking_lot::Mutex;
@@ -51,7 +51,11 @@ impl Git {
 
 impl Git {
     #[instrument(skip(self))]
-    pub async fn repo(self: Arc<Self>, repo_path: PathBuf) -> Result<Arc<OpenRepository>> {
+    pub async fn repo(
+        self: Arc<Self>,
+        repo_path: PathBuf,
+        branch: Option<Arc<str>>,
+    ) -> Result<Arc<OpenRepository>> {
         let repo = tokio::task::spawn_blocking({
             let repo_path = repo_path.clone();
             move || git2::Repository::open(repo_path)
@@ -64,6 +68,7 @@ impl Git {
             git: self,
             cache_key: repo_path,
             repo: Mutex::new(repo),
+            branch,
         }))
     }
 }
@@ -72,6 +77,7 @@ pub struct OpenRepository {
     git: Arc<Git>,
     cache_key: PathBuf,
     repo: Mutex<git2::Repository>,
+    branch: Option<Arc<str>>,
 }
 
 impl OpenRepository {
@@ -79,7 +85,6 @@ impl OpenRepository {
         self: Arc<Self>,
         path: Option<PathBuf>,
         tree_id: Option<&str>,
-        branch: Option<String>,
         formatted: bool,
     ) -> Result<PathDestination> {
         let tree_id = tree_id
@@ -93,12 +98,11 @@ impl OpenRepository {
             let mut tree = if let Some(tree_id) = tree_id {
                 repo.find_tree(tree_id)
                     .context("Couldn't find tree with given id")?
-            } else if let Some(branch) = branch {
-                let branch = repo.find_branch(&branch, BranchType::Local)?;
-                branch
-                    .get()
+            } else if let Some(branch) = &self.branch {
+                let reference = repo.resolve_reference_from_short_name(branch)?;
+                reference
                     .peel_to_tree()
-                    .context("Couldn't find tree for branch")?
+                    .context("Couldn't find tree for reference")?
             } else {
                 let head = repo.head()?;
                 head.peel_to_tree()
@@ -175,16 +179,14 @@ impl OpenRepository {
     }
 
     #[instrument(skip(self))]
-    pub async fn tag_info(self: Arc<Self>, tag_name: &str) -> Result<DetailedTag> {
-        let reference = format!("refs/tags/{tag_name}");
-        let tag_name = tag_name.to_string();
-
+    pub async fn tag_info(self: Arc<Self>) -> Result<DetailedTag> {
         tokio::task::spawn_blocking(move || {
+            let tag_name = self.branch.clone().context("no tag given")?;
             let repo = self.repo.lock();
 
             let tag = repo
-                .find_reference(&reference)
-                .context("Given reference does not exist in repository")?
+                .find_reference(&format!("refs/tags/{tag_name}"))
+                .context("Given tag does not exist in repository")?
                 .peel_to_tag()
                 .context("Couldn't get to a tag from the given reference")?;
             let tag_target = tag.target().context("Couldn't find tagged object")?;
@@ -222,7 +224,12 @@ impl OpenRepository {
                 tokio::task::spawn_blocking(move || {
                     let repo = self.repo.lock();
 
-                    let head = repo.head().context("Couldn't find HEAD of repository")?;
+                    let head = if let Some(reference) = &self.branch {
+                        repo.resolve_reference_from_short_name(reference)?
+                    } else {
+                        repo.head().context("Couldn't find HEAD of repository")?
+                    };
+
                     let commit = head.peel_to_commit().context(
                         "Couldn't find the commit that the HEAD of the repository refers to",
                     )?;
@@ -268,7 +275,12 @@ impl OpenRepository {
         tokio::task::spawn_blocking(move || {
             let repo = self.repo.lock();
 
-            let head = repo.head().context("Couldn't find HEAD of repository")?;
+            let head = if let Some(reference) = &self.branch {
+                repo.resolve_reference_from_short_name(reference)?
+            } else {
+                repo.head().context("Couldn't find HEAD of repository")?
+            };
+
             let commit = head
                 .peel_to_commit()
                 .context("Couldn't find commit HEAD of repository refers to")?;
@@ -381,7 +393,7 @@ pub enum TaggedObject {
 
 #[derive(Debug)]
 pub struct DetailedTag {
-    pub name: String,
+    pub name: Arc<str>,
     pub tagger: Option<CommitUser>,
     pub message: String,
     pub tagged_object: Option<TaggedObject>,

@@ -65,7 +65,10 @@ impl Git {
         })
         .await
         .context("Failed to join Tokio task")?
-        .context("Failed to open repository")?;
+        .map_err(|err| {
+            error!("{}", err);
+            anyhow!("Failed to open repository")
+        })?;
 
         Ok(Arc::new(OpenRepository {
             git: self,

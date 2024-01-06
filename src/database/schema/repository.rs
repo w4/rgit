@@ -33,6 +33,12 @@ pub struct Repository<'a> {
 pub type YokedRepository = Yoked<Repository<'static>>;
 
 impl Repository<'_> {
+    pub fn exists<P: AsRef<Path>>(database: &sled::Db, path: P) -> bool {
+        database
+            .contains_key(TreePrefix::repository_id(path))
+            .unwrap_or_default()
+    }
+
     pub fn fetch_all(database: &sled::Db) -> Result<BTreeMap<String, YokedRepository>> {
         database
             .scan_prefix([TreePrefix::Repository as u8])

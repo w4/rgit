@@ -123,6 +123,16 @@ where
     let uri = uri_parts.into_iter().collect::<PathBuf>().clean();
     let path = scan_path.join(&uri);
 
+    let db = request
+        .extensions()
+        .get::<sled::Db>()
+        .expect("db extension missing");
+    if path.as_os_str().is_empty()
+        || !crate::database::schema::repository::Repository::exists(db, &uri)
+    {
+        return RepositoryNotFound.into_response();
+    }
+
     request.extensions_mut().insert(ChildPath(child_path));
     request.extensions_mut().insert(Repository(uri));
     request.extensions_mut().insert(RepositoryPath(path));
@@ -160,6 +170,14 @@ impl Deref for RepositoryPath {
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
+
+pub struct RepositoryNotFound;
+
+impl IntoResponse for RepositoryNotFound {
+    fn into_response(self) -> Response {
+        (StatusCode::NOT_FOUND, "Repository not found").into_response()
+    }
+}
 
 pub struct Error(anyhow::Error);
 

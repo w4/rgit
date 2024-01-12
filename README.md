@@ -1,86 +1,115 @@
 # rgit
 
+## Introduction
+
 [See it in action!](https://git.inept.dev/)
 
 A gitweb/cgit-like interface for the modern age. Written in Rust using Axum, git2, Askama and Sled.
 
-Sled is used to store all metadata about a repository including commits, branches, tags. Metadata
-will be reindexed every 5 minutes outside of the request path. This leads to up to 97% faster load
-times for large repositories.
-
-Files, trees & diffs will be loaded using git2 directly upon request, a small in-memory cache is
-included for rendered READMEs and diffs.
-
 Includes a dark mode for late night committing.
 
-Your `SCAN_PATH` should contain (optionally nested) [bare repositories][], and a `config` file
-can be written with a `[gitweb.owner]` key to signify ownership.
+## Table of Contents
 
-Example given:
-```text
-$ cat config
-[core]
-	repositoryformatversion = 0
-	filemode = true
-	bare = true
-[gitweb]
-	owner = "Jordan Doyle"
-$
-```
+- [Features](#features)
+- [Getting Started](#getting-started)
+  - [Installation](#installation)
+    - [Cargo (automatic)](#cargo-automatic)
+    - [From Source (manually)](#from-source-manually)
+  - [Usage](#usage)
+  - [Configuration](#configuration)
+    - [Repository Description](#repository-description)
+    - [Repository Owner](#repository-owner)
+  - [NixOS](#nixos)
+  - [Docker](#docker)
+    - [Docker Compose](#docker-compose)
+- [Contributing](#contributing)
+- [License](#license)
+- [Troubleshooting](#troubleshooting)
+  - [Cloning Repositories](#cloning-repositories)
+    - [Repository not exported](#repository-not-exported)
+  - [Launching the Application](#launching-the-application)
+    - [...is not owned by the current user](#is-not-owned-by-the-current-user)
+  - [Application Usage](#application-usage)
+    - [Newly initialized repositories do not appear](#newly-initialized-repositories-do-not-appear)
 
-[bare repositories]: https://git-scm.com/book/en/v2/Git-on-the-Server-Getting-Git-on-a-Server
+## Features
 
-Usage:
+- **Efficient Metadata Storage**  
+  [Sled][] is used to store all metadata about a repository, including commits, branches, and tags. Metadata is reindexed, and the reindex interval is configurable (default: every 5 minutes), resulting in up to 97% faster load times for large repositories.
 
-```
-rgit 0.1.1
+- **On-Demand Loading**  
+  Files, trees, and diffs are loaded using [git2][] directly upon request. A small in-memory cache is included for rendered READMEs and diffs, enhancing performance.
 
-USAGE:
-    rgit --db-store <DB_STORE> <BIND_ADDRESS> <SCAN_PATH>
+- **Dark Mode Support**  
+  Enjoy a dark mode for late-night committing, providing a visually comfortable experience during extended coding sessions.
 
-ARGS:
-    <BIND_ADDRESS>
-            The socket address to bind to (eg. 0.0.0.0:3333)
+[Sled]: https://github.com/spacejam/sled
+[git2]: https://github.com/rust-lang/git2-rs
 
-    <SCAN_PATH>
-            The path in which your bare Git repositories reside (will be scanned recursively)
+## Getting Started
 
-OPTIONS:
-    -d, --db-store <DB_STORE>
-            Path to a directory in which the Sled database should be stored, will be created if it
-            doesn't already exist
+Before you begin, ensure that you have the Rust toolchain and Cargo installed. If you haven't installed them yet, you can do so by following the instructions provided on the official Rust website:
 
-            The Sled database is very quick to generate, so this can be pointed to temporary storage
-    --refresh-interval <REFRESH_INTERVAL>
-            Configures the metadata refresh interval (eg. "never" or "60s")
+- [Install Rust](https://www.rust-lang.org/learn/get-started)
 
-            [default: 5m]
+Once you have Rust and Cargo installed, you can proceed with setting up and running the project.
 
-    -h, --help
-            Print help information
+**Note:** This software is designed to work exclusively with bare Git repositories. Make sure to set up bare repositories beforehand by following the [Git on the Server documentation][].
 
-    -V, --version
-            Print version information
-```
+[Git on the Server documentation]: https://git-scm.com/book/en/v2/Git-on-the-Server-Getting-Git-on-a-Server
 
 ### Installation
 
-#### From Source
+#### Cargo (automatic)
 
-rgit can be installed from source by cloning, building using [`cargo`][] and running the binary:
-
-```bash
-git clone https://github.com/w4/rgit
-cd rgit
-cargo build --release
-./target/release/rgit [::]:3333 /path/to/my-repos -d /tmp/rgit-cache.db
+```shell
+cargo install --git https://github.com/w4/rgit
 ```
 
-[`cargo`]: https://www.rust-lang.org/
+#### From Source (manually)
 
-#### NixOS
+Clone the repository and build:
 
-Running rgit on NixOS is extremely simple, simply import the module into your `flake.nix`
+```shell
+git clone https://github.com/w4/rgit.git
+cd rgit
+cargo build --release
+```
+
+The rgit binary will be found in the `target/release` directory.
+
+### Usage
+
+To get up and running quickly, run rgit with the following:
+
+```shell
+rgit [::]:3333 /path/to/my-bare-repos -d /tmp/rgit-cache.db
+```
+
+**Notes:**
+- Repository indexing is recursive.
+- The database is quick to generate, so this can be pointed to temporary storage.
+
+### Configuration
+
+#### Repository Description
+
+To set a repository description, edit the file named `description` inside the bare git repository. Add your desired description text to this file.
+
+#### Repository Owner
+
+To assign an owner to a repository, edit the file named `config` inside the bare git repository and include the following content:
+
+```ini
+[gitweb]
+    owner = "Al Gorithm"
+```
+
+Replace `Al Gorithm` with the desired owner's name.
+
+### NixOS
+
+Running rgit on NixOS is straightforward, simply import the module into your `flake.nix`
 and use the provided service:
 
 ```nix
@@ -103,7 +132,7 @@ and use the provided service:
             enable = true;
             bindAddress = "[::]:3333";
             dbStorePath = "/tmp/rgit.db";
-            repositoryStorePath = "/path/to/my-repos";
+            repositoryStorePath = "/path/to/my-bare-repos";
           };
         }
         ...
@@ -113,25 +142,22 @@ and use the provided service:
 }
 ```
 
-#### Docker
+### Docker
 
-Running rgit in Docker is also simple, just mount the directory containing your repositories to
-`/git`:
+Running rgit in Docker is straightforward. Follow these steps, ensuring that your repository directory is correctly mounted:
 
-```bash
-docker run --mount type=bind,source=/path/to/my-repos,target=/git \
+```shell
+docker run --mount type=bind,source=/path/to/my-bare-repos,target=/git \
   --user $UID:$GID \
   -it ghcr.io/w4/rgit:main
 ```
 
-**Note**: Take care to replace `$UID` and `$GID` with the UID and GID of the user
-that owns the directory containing your repositories or there will be errors! [See
-here](https://linuxhandbook.com/uid-linux/) to learn how to find the UID of a user.
+**Note**: Replace `$UID` and `$GID` with the UID and GID of the user that owns the directory containing your repositories. If these values are incorrect, errors will occur. Learn how to find the UID of a user [here](https://linuxhandbook.com/uid-linux/).
 
 #### Docker Compose
 
 An example `docker-compose.yml` is provided for those who prefer using Compose. To configure
-the UID and GID, the user is specified in `docker-compose.override.yml`.
+the UID and GID, the user can be specified in `docker-compose.override.yml`.
 
 An example override file has been has been provided with the repository. To use it, remove the
 `.example` extension from `docker-compose.override.yml.example`, and adjust the UID and GID to
@@ -139,37 +165,67 @@ match the user that owns the directory containing your repositories.
 
 To configure automatic refresh in Docker, an environment variable is also provided.
 
-```
+```yml
 services:
   rgit:
     environment:
-	  - REFRESH_INTERVAL=5m
+      - REFRESH_INTERVAL=5m
 ```
 
 Afterwards, bring up the container with `docker-compose up` to make sure everything works.
 
-### Notes
+## Contributing
 
-#### not owned by current user
+Pull requests are welcome via GitHub or [`git-send-email`](https://git-scm.com/docs/git-send-email).
 
-When you get `message: "repository path '/git/orzklv-dots/' is not owned by current user"` in the
-logging, it means exactly that. It is a _git design choice_, only owner writes to the git
-repository. Match the `uid` what `rgit` started with the `uid` of the git repo on the filesystem.
+## License
 
-##### Repository not exported
+rgit is licensed under the [WTFPL](LICENSE).
 
-Message `Git returned an error: Repository not exported` is like _"repo not yet exposed"_.
+## Troubleshooting
 
-Go to the `.git` directory and create file `git-daemon-export-ok`.
+### Cloning Repositories
 
-```text
-$ cd /srv/rgit/rgit.git
-$ ls
-HEAD      config       hooks  objects      refs
-branches  description  info   packed-refs
-$ touch git-daemon-export-ok
-$ ls
-HEAD      config       git-daemon-export-ok  info     packed-refs
-branches  description  hooks                 objects  refs
-$
+#### Repository not exported
+
+**Symptom:**
+When attempting to clone repositories via HTTPS, you encounter the error message:
+
 ```
+Git returned an error: Repository not exported
+```
+
+**Solution:**
+Create a file named `git-daemon-export-ok` in the bare git repository. This file signals to the git daemon that the repository is [exportable][].
+
+[exportable]: https://git-scm.com/docs/git-daemon
+
+### Launching the Application
+
+#### ...is not owned by the current user
+
+**Symptom:**
+When launching the application, you receive the error message:
+
+```
+repository path '/git/path/to/my/repository.git/' is not owned by the current user
+```
+
+**Solution:**
+Ensure that the user launching `rgit` or the Docker container has the same permissions as the user that owns the repositories directory.
+
+### Application Usage
+
+#### Newly initialized repositories do not appear
+
+**Symptom:**
+When using the application, a newly initialized bare repository without commits does not appear in the list.
+
+**Solution:**
+Run the following command inside the repository to initialize it:
+
+```shell
+git pack-refs --all
+```
+
+Alternatively, push a commit with at least one file to the repository. This will also make the repository appear in the list.

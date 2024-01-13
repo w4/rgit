@@ -12,11 +12,11 @@ use ini::Ini;
 use time::OffsetDateTime;
 use tracing::{error, info, info_span, instrument, warn};
 
-use super::schema::tag::TagTree;
 use crate::database::schema::{
     commit::Commit,
+    prefixes::TreePrefix,
     repository::{Repository, RepositoryId},
-    tag::Tag,
+    tag::{Tag, TagTree},
 };
 
 pub fn run(scan_path: &Path, db: &sled::Db) {
@@ -154,6 +154,7 @@ fn update_repository_reflog(scan_path: &Path, db: &sled::Db) {
                 db_repository.get(),
                 db,
                 &git_repository,
+                false,
             ) {
                 error!(%error, "Failed to update reflog for {relative_path}@{reference_name}");
             }
@@ -169,39 +170,72 @@ fn branch_index_update(
     db_repository: &Repository<'_>,
     db: &sled::Db,
     git_repository: &git2::Repository,
+    force_reindex: bool,
 ) -> Result<(), anyhow::Error> {
     info!("Refreshing indexes");
 
+    if force_reindex {
+        db.drop_tree(TreePrefix::commit_id(db_repository.id, reference_name))?;
+    }
+
+    let commit = reference.peel_to_commit()?;
     let commit_tree = db_repository.commit_tree(db, reference_name)?;
 
-    if let (Some(latest_indexed), Ok(latest_commit)) =
-        (commit_tree.fetch_latest_one(), reference.peel_to_commit())
-    {
-        if latest_commit.id().as_bytes() == &*latest_indexed.get().hash {
+    let latest_indexed = if let Some(latest_indexed) = commit_tree.fetch_latest_one() {
+        if commit.id().as_bytes() == &*latest_indexed.get().hash {
             info!("No commits since last index");
             return Ok(());
         }
-    }
 
-    // TODO: only scan revs from the last time we looked
+        Some(latest_indexed)
+    } else {
+        None
+    };
+
     let mut revwalk = git_repository.revwalk()?;
     revwalk.set_sorting(Sort::REVERSE)?;
     revwalk.push_ref(reference_name)?;
 
+    let tree_len = commit_tree.len();
+    let mut seen = false;
     let mut i = 0;
     for rev in revwalk {
-        let commit = git_repository.find_commit(rev?)?;
+        let rev = rev?;
+
+        if let (false, Some(latest_indexed)) = (seen, &latest_indexed) {
+            if rev.as_bytes() == &*latest_indexed.get().hash {
+                seen = true;
+            }
+
+            continue;
+        }
+
+        seen = true;
+
+        if ((i + 1) % 25_000) == 0 {
+            info!("{} commits ingested", i + 1);
+        }
+
+        let commit = git_repository.find_commit(rev)?;
         let author = commit.author();
         let committer = commit.committer();
 
-        Commit::new(&commit, &author, &committer).insert(&commit_tree, i);
+        Commit::new(&commit, &author, &committer).insert(&commit_tree, tree_len + i);
         i += 1;
     }
 
-    // a complete and utter hack to remove potentially dropped commits from our tree,
-    // we'll need to add `clear()` to sled's tx api to remove this
-    for to_remove in (i + 1)..(i + 100) {
-        commit_tree.remove(to_remove.to_be_bytes())?;
+    if !seen && !force_reindex {
+        warn!("Detected converged history, forcing reindex");
+
+        return branch_index_update(
+            reference,
+            reference_name,
+            relative_path,
+            db_repository,
+            db,
+            git_repository,
+            true,
+        );
     }
 
     Ok(())

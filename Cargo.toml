@@ -32,7 +32,7 @@ parking_lot = "0.12"
 serde = { version = "1.0", features = ["derive", "rc"] }
 sha2 = "0.10"
 syntect = "5"
-sled = { version = "0.34", features = ["compression"] }
+rocksdb = "0.21"
 tar = "0.4"
 flate2 = "1.0"
 time = { version = "0.3", features = ["serde"] }
@@ -45,11 +45,12 @@ tower-service = "0.3"
 tower-layer = "0.3"
 tower-http = { version = "0.4.4", features = ["cors"] }
 tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 unix_mode = "0.1"
 uuid = { version = "1.6", features = ["v4"] }
 httparse = "1.7"
 yoke = { version = "0.7.1", features = ["derive"] }
+rand = "0.8.5"
 
 [build-dependencies]
 anyhow = "1.0"

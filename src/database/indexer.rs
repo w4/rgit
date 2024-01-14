@@ -4,6 +4,7 @@ use std::{
     ffi::OsStr,
     fmt::Debug,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use anyhow::Context;
@@ -14,20 +15,19 @@ use tracing::{error, info, info_span, instrument, warn};
 
 use crate::database::schema::{
     commit::Commit,
-    prefixes::TreePrefix,
     repository::{Repository, RepositoryId},
     tag::{Tag, TagTree},
 };
 
-pub fn run(scan_path: &Path, db: &sled::Db) {
+pub fn run(scan_path: &Path, db: &Arc<rocksdb::DB>) {
     let span = info_span!("index_update");
     let _entered = span.enter();
 
     info!("Starting index update");
 
     update_repository_metadata(scan_path, db);
-    update_repository_reflog(scan_path, db);
-    update_repository_tags(scan_path, db);
+    update_repository_reflog(scan_path, db.clone());
+    update_repository_tags(scan_path, db.clone());
 
     info!("Flushing to disk");
 
@@ -39,7 +39,7 @@ pub fn run(scan_path: &Path, db: &sled::Db) {
 }
 
 #[instrument(skip(db))]
-fn update_repository_metadata(scan_path: &Path, db: &sled::Db) {
+fn update_repository_metadata(scan_path: &Path, db: &rocksdb::DB) {
     let mut discovered = Vec::new();
     discover_repositories(scan_path, &mut discovered);
 
@@ -49,7 +49,7 @@ fn update_repository_metadata(scan_path: &Path, db: &sled::Db) {
         };
 
         let id = match Repository::open(db, relative) {
-            Ok(v) => v.map_or_else(|| RepositoryId::new(db), |v| v.get().id),
+            Ok(v) => v.map_or_else(RepositoryId::new, |v| v.get().id),
             Err(error) => {
                 // maybe we could nuke it ourselves, but we need to instantly trigger
                 // a reindex and we could enter into an infinite loop if there's a bug
@@ -75,7 +75,7 @@ fn update_repository_metadata(scan_path: &Path, db: &sled::Db) {
             }
         };
 
-        Repository {
+        let res = Repository {
             id,
             name,
             description,
@@ -88,6 +88,10 @@ fn update_repository_metadata(scan_path: &Path, db: &sled::Db) {
                 .map(Cow::Owned),
         }
         .insert(db, relative);
+
+        if let Err(error) = res {
+            warn!(%error, "Failed to insert repository");
+        }
     }
 }
 
@@ -116,8 +120,8 @@ fn find_last_committed_time(repo: &git2::Repository) -> Result<OffsetDateTime, g
 }
 
 #[instrument(skip(db))]
-fn update_repository_reflog(scan_path: &Path, db: &sled::Db) {
-    let repos = match Repository::fetch_all(db) {
+fn update_repository_reflog(scan_path: &Path, db: Arc<rocksdb::DB>) {
+    let repos = match Repository::fetch_all(&db) {
         Ok(v) => v,
         Err(error) => {
             error!(%error, "Failed to read repository index to update reflog, consider deleting database directory");
@@ -126,7 +130,7 @@ fn update_repository_reflog(scan_path: &Path, db: &sled::Db) {
     };
 
     for (relative_path, db_repository) in repos {
-        let Some(git_repository) = open_repo(scan_path, &relative_path, db_repository.get(), db)
+        let Some(git_repository) = open_repo(scan_path, &relative_path, db_repository.get(), &db)
         else {
             continue;
         };
@@ -139,6 +143,8 @@ fn update_repository_reflog(scan_path: &Path, db: &sled::Db) {
             }
         };
 
+        let mut valid_references = Vec::new();
+
         for reference in references.filter_map(Result::ok) {
             let reference_name = String::from_utf8_lossy(reference.name_bytes());
             if !reference_name.starts_with("refs/heads/")
@@ -147,17 +153,23 @@ fn update_repository_reflog(scan_path: &Path, db: &sled::Db) {
                 continue;
             }
 
+            valid_references.push(reference_name.to_string());
+
             if let Err(error) = branch_index_update(
                 &reference,
                 &reference_name,
                 &relative_path,
                 db_repository.get(),
-                db,
+                db.clone(),
                 &git_repository,
                 false,
             ) {
                 error!(%error, "Failed to update reflog for {relative_path}@{reference_name}");
             }
+        }
+
+        if let Err(error) = db_repository.get().replace_heads(&db, &valid_references) {
+            error!(%error, "Failed to update heads");
         }
     }
 }
@@ -168,20 +180,21 @@ fn branch_index_update(
     reference_name: &str,
     relative_path: &str,
     db_repository: &Repository<'_>,
-    db: &sled::Db,
+    db: Arc<rocksdb::DB>,
     git_repository: &git2::Repository,
     force_reindex: bool,
 ) -> Result<(), anyhow::Error> {
     info!("Refreshing indexes");
 
+    let commit_tree = db_repository.commit_tree(db.clone(), reference_name);
+
     if force_reindex {
-        db.drop_tree(TreePrefix::commit_id(db_repository.id, reference_name))?;
+        commit_tree.drop_commits()?;
     }
 
     let commit = reference.peel_to_commit()?;
-    let commit_tree = db_repository.commit_tree(db, reference_name)?;
 
-    let latest_indexed = if let Some(latest_indexed) = commit_tree.fetch_latest_one() {
+    let latest_indexed = if let Some(latest_indexed) = commit_tree.fetch_latest_one()? {
         if commit.id().as_bytes() == &*latest_indexed.get().hash {
             info!("No commits since last index");
             return Ok(());
@@ -196,7 +209,7 @@ fn branch_index_update(
     revwalk.set_sorting(Sort::REVERSE)?;
     revwalk.push_ref(reference_name)?;
 
-    let tree_len = commit_tree.len();
+    let tree_len = commit_tree.len()?;
     let mut seen = false;
     let mut i = 0;
     for rev in revwalk {
@@ -220,7 +233,7 @@ fn branch_index_update(
         let author = commit.author();
         let committer = commit.committer();
 
-        Commit::new(&commit, &author, &committer).insert(&commit_tree, tree_len + i);
+        Commit::new(&commit, &author, &committer).insert(&commit_tree, tree_len + i)?;
         i += 1;
     }
 
@@ -238,12 +251,14 @@ fn branch_index_update(
         );
     }
 
+    commit_tree.update_counter(tree_len + i)?;
+
     Ok(())
 }
 
 #[instrument(skip(db))]
-fn update_repository_tags(scan_path: &Path, db: &sled::Db) {
-    let repos = match Repository::fetch_all(db) {
+fn update_repository_tags(scan_path: &Path, db: Arc<rocksdb::DB>) {
+    let repos = match Repository::fetch_all(&db) {
         Ok(v) => v,
         Err(error) => {
             error!(%error, "Failed to read repository index to update tags, consider deleting database directory");
@@ -252,13 +267,17 @@ fn update_repository_tags(scan_path: &Path, db: &sled::Db) {
     };
 
     for (relative_path, db_repository) in repos {
-        let Some(git_repository) = open_repo(scan_path, &relative_path, db_repository.get(), db)
+        let Some(git_repository) = open_repo(scan_path, &relative_path, db_repository.get(), &db)
         else {
             continue;
         };
 
-        if let Err(error) = tag_index_scan(&relative_path, db_repository.get(), db, &git_repository)
-        {
+        if let Err(error) = tag_index_scan(
+            &relative_path,
+            db_repository.get(),
+            db.clone(),
+            &git_repository,
+        ) {
             error!(%error, "Failed to update tags for {relative_path}");
         }
     }
@@ -268,12 +287,10 @@ fn update_repository_tags(scan_path: &Path, db: &sled::Db) {
 fn tag_index_scan(
     relative_path: &str,
     db_repository: &Repository<'_>,
-    db: &sled::Db,
+    db: Arc<rocksdb::DB>,
     git_repository: &git2::Repository,
 ) -> Result<(), anyhow::Error> {
-    let tag_tree = db_repository
-        .tag_tree(db)
-        .context("Failed to read tag index tree")?;
+    let tag_tree = db_repository.tag_tree(db);
 
     let git_tags: HashSet<_> = git_repository
         .references()
@@ -282,7 +299,7 @@ fn tag_index_scan(
         .filter(|v| v.name_bytes().starts_with(b"refs/tags/"))
         .map(|v| String::from_utf8_lossy(v.name_bytes()).into_owned())
         .collect();
-    let indexed_tags: HashSet<String> = tag_tree.list().into_iter().collect();
+    let indexed_tags: HashSet<String> = tag_tree.list()?.into_iter().collect();
 
     // insert any git tags that are missing from the index
     for tag_name in git_tags.difference(&indexed_tags) {
@@ -330,7 +347,7 @@ fn open_repo<P: AsRef<Path> + Debug>(
     scan_path: &Path,
     relative_path: P,
     db_repository: &Repository<'_>,
-    db: &sled::Db,
+    db: &rocksdb::DB,
 ) -> Option<git2::Repository> {
     match git2::Repository::open(scan_path.join(relative_path.as_ref())) {
         Ok(v) => Some(v),

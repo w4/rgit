@@ -110,7 +110,7 @@ impl OpenRepository {
                     .peel_to_tree()
                     .context("Couldn't find tree for reference")?
             } else {
-                let head = repo.head()?;
+                let head = repo.head().context("Failed to find HEAD")?;
                 head.peel_to_tree()
                     .context("Couldn't find tree from HEAD")?
             };

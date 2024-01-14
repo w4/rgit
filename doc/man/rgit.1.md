@@ -15,7 +15,7 @@ SYNOPSIS
 DESCRIPTION
 ===========
 
-A gitweb/cgit-like interface for the modern age. Written in Rust using Axum, git2, Askama, and Sled.  
+A gitweb/cgit-like interface for the modern age. Written in Rust using Axum, git2, Askama, and RocksDB.  
   
 _bind_address_ 
 
@@ -47,9 +47,9 @@ OPTIONS
 
 **-d** _path_, **\--db-store** _path_
 
-:   Path to a directory in which the Sled database should be stored, will be created if it doesn't already exist.  
+:   Path to a directory in which the RocksDB database should be stored, will be created if it doesn't already exist.  
 
-    The Sled database is very quick to generate, so this can be pointed to temporary storage. (Required)
+    The RocksDB database is very quick to generate, so this can be pointed to temporary storage. (Required)
 
     Example:
 

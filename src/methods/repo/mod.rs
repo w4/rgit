@@ -125,10 +125,10 @@ where
 
     let db = request
         .extensions()
-        .get::<sled::Db>()
+        .get::<Arc<rocksdb::DB>>()
         .expect("db extension missing");
     if path.as_os_str().is_empty()
-        || !crate::database::schema::repository::Repository::exists(db, &uri)
+        || !crate::database::schema::repository::Repository::exists(db, &uri).unwrap_or_default()
     {
         return RepositoryNotFound.into_response();
     }

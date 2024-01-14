@@ -22,10 +22,11 @@ use axum::{
 };
 use bat::assets::HighlightingAssets;
 use clap::Parser;
-use database::schema::{prefixes::TreePrefix, SCHEMA_VERSION};
+use database::schema::SCHEMA_VERSION;
+use nom::AsBytes;
 use once_cell::sync::{Lazy, OnceCell};
+use rocksdb::{Options, SliceTransform};
 use sha2::{digest::FixedOutput, Digest};
-use sled::Db;
 use syntect::html::ClassStyle;
 use tokio::{
     signal::unix::{signal, SignalKind},
@@ -34,8 +35,15 @@ use tokio::{
 use tower_http::cors::CorsLayer;
 use tower_layer::layer_fn;
 use tracing::{error, info, instrument, warn};
+use tracing_subscriber::EnvFilter;
 
-use crate::{git::Git, layers::logger::LoggingMiddleware};
+use crate::{
+    database::schema::prefixes::{
+        COMMIT_COUNT_FAMILY, COMMIT_FAMILY, REFERENCE_FAMILY, REPOSITORY_FAMILY, TAG_FAMILY,
+    },
+    git::Git,
+    layers::logger::LoggingMiddleware,
+};
 
 mod database;
 mod git;
@@ -54,9 +62,9 @@ static DARK_HIGHLIGHT_CSS_HASH: OnceCell<Box<str>> = OnceCell::new();
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
 pub struct Args {
-    /// Path to a directory in which the Sled database should be stored, will be created if it doesn't already exist
+    /// Path to a directory in which the RocksDB database should be stored, will be created if it doesn't already exist
     ///
-    /// The Sled database is very quick to generate, so this can be pointed to temporary storage
+    /// The RocksDB database is very quick to generate, so this can be pointed to temporary storage
     #[clap(short, long, value_parser)]
     db_store: PathBuf,
     /// The socket address to bind to (eg. 0.0.0.0:3333)
@@ -101,7 +109,7 @@ impl FromStr for RefreshInterval {
 async fn main() -> Result<(), anyhow::Error> {
     let args: Args = Args::parse();
 
-    let subscriber = tracing_subscriber::fmt();
+    let subscriber = tracing_subscriber::fmt().with_env_filter(EnvFilter::from_default_env());
     #[cfg(debug_assertions)]
     let subscriber = subscriber.pretty();
     subscriber.init();
@@ -198,35 +206,62 @@ async fn main() -> Result<(), anyhow::Error> {
     }
 }
 
-fn open_db(args: &Args) -> Result<Db, anyhow::Error> {
-    let db = sled::Config::default()
-        .use_compression(true)
-        .path(&args.db_store)
-        .open()
-        .context("Failed to open database")?;
+fn open_db(args: &Args) -> Result<Arc<rocksdb::DB>, anyhow::Error> {
+    loop {
+        let mut db_options = Options::default();
+        db_options.create_missing_column_families(true);
+        db_options.create_if_missing(true);
 
-    let needs_schema_regen = match db.get(TreePrefix::schema_version())? {
-        Some(v) if v != SCHEMA_VERSION.as_bytes() => Some(Some(v)),
-        Some(_) => None,
-        None => Some(None),
-    };
+        let mut commit_family_options = Options::default();
+        commit_family_options.set_prefix_extractor(SliceTransform::create(
+            "commit_prefix",
+            |input| input.split(|&c| c == b'\0').next().unwrap_or(input),
+            None,
+        ));
 
-    if let Some(version) = needs_schema_regen {
-        let old_version = version
-            .as_deref()
-            .map_or(Cow::Borrowed("unknown"), String::from_utf8_lossy);
+        let mut tag_family_options = Options::default();
+        tag_family_options.set_prefix_extractor(SliceTransform::create_fixed_prefix(
+            std::mem::size_of::<u64>(),
+        )); // repository id prefix
 
-        warn!("Clearing outdated database ({old_version} != {SCHEMA_VERSION})");
+        let db = rocksdb::DB::open_cf_with_opts(
+            &db_options,
+            &args.db_store,
+            vec![
+                (COMMIT_FAMILY, commit_family_options),
+                (REPOSITORY_FAMILY, Options::default()),
+                (TAG_FAMILY, tag_family_options),
+                (REFERENCE_FAMILY, Options::default()),
+                (COMMIT_COUNT_FAMILY, Options::default()),
+            ],
+        )?;
 
-        db.clear()?;
-        db.insert(TreePrefix::schema_version(), SCHEMA_VERSION)?;
+        let needs_schema_regen = match db.get("schema_version")? {
+            Some(v) if v.as_bytes() != SCHEMA_VERSION.as_bytes() => Some(Some(v)),
+            Some(_) => None,
+            None => {
+                db.put("schema_version", SCHEMA_VERSION)?;
+                None
+            }
+        };
+
+        if let Some(version) = needs_schema_regen {
+            let old_version = version
+                .as_deref()
+                .map_or(Cow::Borrowed("unknown"), String::from_utf8_lossy);
+
+            warn!("Clearing outdated database ({old_version} != {SCHEMA_VERSION})");
+
+            drop(db);
+            rocksdb::DB::destroy(&Options::default(), &args.db_store)?;
+        } else {
+            break Ok(Arc::new(db));
+        }
     }
-
-    Ok(db)
 }
 
 async fn run_indexer(
-    db: Db,
+    db: Arc<rocksdb::DB>,
     scan_path: PathBuf,
     refresh_interval: RefreshInterval,
 ) -> Result<(), tokio::task::JoinError> {

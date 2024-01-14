@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use anyhow::Context;
 use askama::Template;
@@ -13,7 +13,9 @@ pub struct View<'a> {
     pub repositories: BTreeMap<Option<String>, Vec<&'a Repository<'a>>>,
 }
 
-pub async fn handle(Extension(db): Extension<sled::Db>) -> Result<Response, super::repo::Error> {
+pub async fn handle(
+    Extension(db): Extension<Arc<rocksdb::DB>>,
+) -> Result<Response, super::repo::Error> {
     let mut repositories: BTreeMap<Option<String>, Vec<&Repository<'_>>> = BTreeMap::new();
 
     let fetched = tokio::task::spawn_blocking(move || Repository::fetch_all(&db))

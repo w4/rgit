@@ -1,6 +1,7 @@
 FROM rust:1.71-slim AS builder
 
-RUN apt-get update && apt-get install -y libssl-dev pkg-config
+RUN rustup component add rustfmt
+RUN apt-get update && apt-get install -y libssl-dev pkg-config clang
 
 COPY . /sources
 WORKDIR /sources

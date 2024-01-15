@@ -109,6 +109,10 @@ impl FromStr for RefreshInterval {
 async fn main() -> Result<(), anyhow::Error> {
     let args: Args = Args::parse();
 
+    if std::env::var_os("RUST_LOG").is_none() {
+        std::env::set_var("RUST_LOG", "info");
+    }
+
     let subscriber = tracing_subscriber::fmt().with_env_filter(EnvFilter::from_default_env());
     #[cfg(debug_assertions)]
     let subscriber = subscriber.pretty();

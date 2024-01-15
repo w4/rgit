@@ -189,7 +189,7 @@ impl CommitTree {
 
     pub fn fetch_latest_one(&self) -> Result<Option<YokedCommit>, anyhow::Error> {
         let mut key = self.prefix.to_vec();
-        key.extend_from_slice(&(self.len()? - 1).to_be_bytes());
+        key.extend_from_slice(&(self.len()?.saturating_sub(1)).to_be_bytes());
 
         let cf = self
             .db

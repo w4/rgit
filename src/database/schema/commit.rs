@@ -188,19 +188,21 @@ impl CommitTree {
     }
 
     pub fn fetch_latest_one(&self) -> Result<Option<YokedCommit>, anyhow::Error> {
+        let mut key = self.prefix.to_vec();
+        key.extend_from_slice(&(self.len()? - 1).to_be_bytes());
+
         let cf = self
             .db
             .cf_handle(COMMIT_FAMILY)
             .context("missing column family")?;
 
-        self.db
-            .prefix_iterator_cf(cf, &self.prefix)
-            .next()
-            .transpose()
-            .context("Failed to instantiate iterator")?
-            .map(|(_, value)| Yoke::try_attach_to_cart(value, |data| bincode::deserialize(data)))
-            .transpose()
-            .context("Failed to decode commit")
+        let Some(value) = self.db.get_cf(cf, key)? else {
+            return Ok(None);
+        };
+
+        Yoke::try_attach_to_cart(Box::from(value), |data| bincode::deserialize(data))
+            .map(Some)
+            .context("Failed to deserialize commit")
     }
 
     pub fn fetch_latest(

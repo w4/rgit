@@ -10,6 +10,8 @@ use std::{
 use anyhow::Context;
 use git2::{ErrorCode, Reference, Sort};
 use ini::Ini;
+use itertools::Itertools;
+use rocksdb::WriteBatch;
 use time::OffsetDateTime;
 use tracing::{error, info, info_span, instrument, warn};
 
@@ -212,29 +214,40 @@ fn branch_index_update(
     let tree_len = commit_tree.len()?;
     let mut seen = false;
     let mut i = 0;
-    for rev in revwalk {
-        let rev = rev?;
+    for revs in &revwalk.chunks(250) {
+        let mut batch = WriteBatch::default();
 
-        if let (false, Some(latest_indexed)) = (seen, &latest_indexed) {
-            if rev.as_bytes() == &*latest_indexed.get().hash {
-                seen = true;
+        for rev in revs {
+            let rev = rev?;
+
+            if let (false, Some(latest_indexed)) = (seen, &latest_indexed) {
+                if rev.as_bytes() == &*latest_indexed.get().hash {
+                    seen = true;
+                }
+
+                continue;
             }
 
-            continue;
+            seen = true;
+
+            if ((i + 1) % 25_000) == 0 {
+                info!("{} commits ingested", i + 1);
+            }
+
+            let commit = git_repository.find_commit(rev)?;
+            let author = commit.author();
+            let committer = commit.committer();
+
+            Commit::new(&commit, &author, &committer).insert(
+                &commit_tree,
+                tree_len + i,
+                &mut batch,
+            )?;
+            i += 1;
         }
 
-        seen = true;
-
-        if ((i + 1) % 25_000) == 0 {
-            info!("{} commits ingested", i + 1);
-        }
-
-        let commit = git_repository.find_commit(rev)?;
-        let author = commit.author();
-        let committer = commit.committer();
-
-        Commit::new(&commit, &author, &committer).insert(&commit_tree, tree_len + i)?;
-        i += 1;
+        commit_tree.update_counter(tree_len + i, &mut batch)?;
+        db.write_without_wal(batch)?;
     }
 
     if !seen && !force_reindex {
@@ -250,8 +263,6 @@ fn branch_index_update(
             true,
         );
     }
-
-    commit_tree.update_counter(tree_len + i)?;
 
     Ok(())
 }

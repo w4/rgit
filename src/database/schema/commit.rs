@@ -2,7 +2,7 @@ use std::{borrow::Cow, ops::Deref, sync::Arc};
 
 use anyhow::Context;
 use git2::{Oid, Signature};
-use rocksdb::{IteratorMode, ReadOptions};
+use rocksdb::{IteratorMode, ReadOptions, WriteBatch};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use time::OffsetDateTime;
 use tracing::debug;
@@ -44,8 +44,8 @@ impl<'a> Commit<'a> {
         }
     }
 
-    pub fn insert(&self, batch: &CommitTree, id: u64) -> anyhow::Result<()> {
-        batch.insert(id, self)
+    pub fn insert(&self, tree: &CommitTree, id: u64, tx: &mut WriteBatch) -> anyhow::Result<()> {
+        tree.insert(id, self, tx)
     }
 }
 
@@ -72,8 +72,8 @@ impl Serialize for CommitHash<'_> {
         S: Serializer,
     {
         match self {
-            CommitHash::Oid(v) => v.as_bytes().serialize(serializer),
-            CommitHash::Bytes(v) => v.serialize(serializer),
+            CommitHash::Oid(v) => serializer.serialize_bytes(v.as_bytes()),
+            CommitHash::Bytes(v) => serializer.serialize_bytes(v),
         }
     }
 }
@@ -147,13 +147,13 @@ impl CommitTree {
         Ok(())
     }
 
-    pub fn update_counter(&self, count: u64) -> anyhow::Result<()> {
+    pub fn update_counter(&self, count: u64, tx: &mut WriteBatch) -> anyhow::Result<()> {
         let cf = self
             .db
             .cf_handle(COMMIT_COUNT_FAMILY)
             .context("missing column family")?;
 
-        self.db.put_cf(cf, &self.prefix, count.to_be_bytes())?;
+        tx.put_cf(cf, &self.prefix, count.to_be_bytes());
 
         Ok(())
     }
@@ -173,7 +173,7 @@ impl CommitTree {
         Ok(u64::from_be_bytes(out))
     }
 
-    fn insert(&self, id: u64, commit: &Commit<'_>) -> anyhow::Result<()> {
+    fn insert(&self, id: u64, commit: &Commit<'_>, tx: &mut WriteBatch) -> anyhow::Result<()> {
         let cf = self
             .db
             .cf_handle(COMMIT_FAMILY)
@@ -182,7 +182,7 @@ impl CommitTree {
         let mut key = self.prefix.to_vec();
         key.extend_from_slice(&id.to_be_bytes());
 
-        self.db.put_cf(cf, key, bincode::serialize(commit)?)?;
+        tx.put_cf(cf, key, bincode::serialize(commit)?);
 
         Ok(())
     }

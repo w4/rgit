@@ -2,9 +2,8 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use askama::Template;
-use axum::{extract::Query, response::Response, Extension};
+use axum::{extract::Query, response::IntoResponse, Extension};
 use serde::Deserialize;
-use yoke::Yoke;
 
 use crate::{
     database::schema::{commit::YokedCommit, repository::YokedRepository},
@@ -25,9 +24,9 @@ pub struct UriQuery {
 
 #[derive(Template)]
 #[template(path = "repo/log.html")]
-pub struct View<'a> {
+pub struct View {
     repo: Repository,
-    commits: Vec<&'a crate::database::schema::commit::Commit<'a>>,
+    commits: Vec<YokedCommit>,
     next_offset: Option<u64>,
     branch: Option<String>,
 }
@@ -36,7 +35,7 @@ pub async fn handle(
     Extension(repo): Extension<Repository>,
     Extension(db): Extension<Arc<rocksdb::DB>>,
     Query(query): Query<UriQuery>,
-) -> Result<Response> {
+) -> Result<impl IntoResponse> {
     tokio::task::spawn_blocking(move || {
         let offset = query.offset.unwrap_or(0);
 
@@ -52,9 +51,7 @@ pub async fn handle(
             None
         };
 
-        let commits = commits.iter().map(Yoke::get).collect();
-
-        Ok(into_response(&View {
+        Ok(into_response(View {
             repo,
             commits,
             next_offset,

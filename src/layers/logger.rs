@@ -12,6 +12,7 @@ use axum::{
     http::{HeaderValue, Method, Request, Response},
 };
 use futures::future::{Future, FutureExt, Join, Map, Ready};
+use tokio::task::futures::TaskLocalFuture;
 use tower_service::Service;
 use tracing::{error, info, instrument::Instrumented, Instrument, Span};
 use uuid::Uuid;
@@ -37,7 +38,7 @@ where
     type Response = S::Response;
     type Error = S::Error;
     type Future = Map<
-        Join<Instrumented<S::Future>, Ready<PendingLogMessage>>,
+        Join<TaskLocalFuture<Instant, Instrumented<S::Future>>, Ready<PendingLogMessage>>,
         fn((<S::Future as Future>::Output, PendingLogMessage)) -> <S::Future as Future>::Output,
     >;
 
@@ -63,7 +64,7 @@ where
         };
 
         futures::future::join(
-            self.0.call(req).instrument(span),
+            REQ_TIMESTAMP.scope(log_message.start, self.0.call(req).instrument(span)),
             futures::future::ready(log_message),
         )
         .map(|(response, pending_log_message)| {
@@ -76,6 +77,10 @@ where
             Ok(response)
         })
     }
+}
+
+tokio::task_local! {
+    pub static REQ_TIMESTAMP: Instant;
 }
 
 pub struct PendingLogMessage {

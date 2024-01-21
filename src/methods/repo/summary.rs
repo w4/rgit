@@ -2,8 +2,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use anyhow::Context;
 use askama::Template;
-use axum::{response::Response, Extension};
-use yoke::Yoke;
+use axum::{response::IntoResponse, Extension};
 
 use crate::{
     database::schema::{commit::YokedCommit, repository::YokedRepository},
@@ -16,22 +15,21 @@ use crate::{
 
 #[derive(Template)]
 #[template(path = "repo/summary.html")]
-pub struct View<'a> {
+pub struct View {
     repo: Repository,
     refs: Refs,
-    commit_list: Vec<&'a crate::database::schema::commit::Commit<'a>>,
+    commit_list: Vec<YokedCommit>,
     branch: Option<Arc<str>>,
 }
 
 pub async fn handle(
     Extension(repo): Extension<Repository>,
     Extension(db): Extension<Arc<rocksdb::DB>>,
-) -> Result<Response> {
+) -> Result<impl IntoResponse> {
     tokio::task::spawn_blocking(move || {
         let repository = crate::database::schema::repository::Repository::open(&db, &*repo)?
             .context("Repository does not exist")?;
         let commits = get_default_branch_commits(&repository, &db)?;
-        let commit_list = commits.iter().map(Yoke::get).collect();
 
         let mut heads = BTreeMap::new();
         for head in repository.get().heads(&db)?.get() {
@@ -45,10 +43,10 @@ pub async fn handle(
 
         let tags = repository.get().tag_tree(db).fetch_all()?;
 
-        Ok(into_response(&View {
+        Ok(into_response(View {
             repo,
             refs: Refs { heads, tags },
-            commit_list,
+            commit_list: commits,
             branch: None,
         }))
     })

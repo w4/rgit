@@ -1,13 +1,16 @@
 use std::sync::Arc;
 
 use askama::Template;
-use axum::{extract::Query, response::Response, Extension};
+use axum::{extract::Query, response::IntoResponse, Extension};
 use serde::Deserialize;
 
 use crate::{
     git::Commit,
     into_response,
-    methods::repo::{Repository, RepositoryPath, Result},
+    methods::{
+        filters,
+        repo::{Repository, RepositoryPath, Result},
+    },
     Git,
 };
 
@@ -33,7 +36,7 @@ pub async fn handle(
     Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
     Extension(git): Extension<Arc<Git>>,
     Query(query): Query<UriQuery>,
-) -> Result<Response> {
+) -> Result<impl IntoResponse> {
     let open_repo = git.repo(repository_path, query.branch.clone()).await?;
 
     let dl_branch = if let Some(branch) = query.branch.clone() {
@@ -56,7 +59,7 @@ pub async fn handle(
         Arc::new(open_repo.latest_commit().await?)
     };
 
-    Ok(into_response(&View {
+    Ok(into_response(View {
         repo,
         commit,
         branch: query.branch,

@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use anyhow::Context;
 use askama::Template;
-use axum::{response::Response, Extension};
+use axum::{response::IntoResponse, Extension};
 
 use crate::{
     into_response,
@@ -23,7 +23,7 @@ pub struct View {
 pub async fn handle(
     Extension(repo): Extension<Repository>,
     Extension(db): Extension<Arc<rocksdb::DB>>,
-) -> Result<Response> {
+) -> Result<impl IntoResponse> {
     tokio::task::spawn_blocking(move || {
         let repository = crate::database::schema::repository::Repository::open(&db, &*repo)?
             .context("Repository does not exist")?;
@@ -40,7 +40,7 @@ pub async fn handle(
 
         let tags = repository.get().tag_tree(db).fetch_all()?;
 
-        Ok(into_response(&View {
+        Ok(into_response(View {
             repo,
             refs: Refs { heads, tags },
             branch: None,

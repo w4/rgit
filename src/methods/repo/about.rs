@@ -1,13 +1,16 @@
 use std::sync::Arc;
 
 use askama::Template;
-use axum::{extract::Query, response::Response, Extension};
+use axum::{extract::Query, response::IntoResponse, Extension};
 use serde::Deserialize;
 
 use crate::{
     git::ReadmeFormat,
     into_response,
-    methods::repo::{Repository, RepositoryPath, Result},
+    methods::{
+        filters,
+        repo::{Repository, RepositoryPath, Result},
+    },
     Git,
 };
 
@@ -30,14 +33,14 @@ pub async fn handle(
     Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
     Extension(git): Extension<Arc<Git>>,
     Query(query): Query<UriQuery>,
-) -> Result<Response> {
+) -> Result<impl IntoResponse> {
     let open_repo = git
         .clone()
         .repo(repository_path, query.branch.clone())
         .await?;
     let readme = open_repo.readme().await?;
 
-    Ok(into_response(&View {
+    Ok(into_response(View {
         repo,
         readme,
         branch: query.branch,

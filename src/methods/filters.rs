@@ -2,6 +2,13 @@
 #![allow(clippy::unnecessary_wraps, clippy::trivially_copy_pass_by_ref)]
 
 use std::borrow::Borrow;
+use time::format_description::well_known::Rfc3339;
+
+pub fn format_time(s: time::OffsetDateTime) -> Result<String, askama::Error> {
+    s.format(&Rfc3339)
+        .map_err(Box::from)
+        .map_err(askama::Error::Custom)
+}
 
 pub fn timeago(s: impl Borrow<time::OffsetDateTime>) -> Result<String, askama::Error> {
     Ok(timeago::Formatter::new()

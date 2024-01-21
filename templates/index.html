@@ -12,12 +12,13 @@
         </thead>
 
         <tbody>
-        {%- for (path, repositories) in repositories.iter() %}
+        {%- for (path, repositories) in repositories %}
             {%- if let Some(path) = path %}
             <tr><td class="repo-section" colspan="4">{{ path }}</td></tr>
             {%- endif -%}
 
             {%- for repository in repositories %}
+            {% set repository = repository.get() %}
             <tr class="{% if path.is_some() %}has-parent{% endif %}">
                 <td>
                     <a href="/{% if let Some(path) = path %}{{ path }}/{% endif %}{{ repository.name }}">

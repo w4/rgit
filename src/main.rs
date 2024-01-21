@@ -315,17 +315,41 @@ pub fn build_asset_hash(v: &[u8]) -> Box<str> {
     Box::from(out)
 }
 
-#[instrument(skip(t))]
-pub fn into_response<T: Template>(t: &T) -> Response {
-    match t.render() {
-        Ok(body) => {
-            let headers = [(
-                http::header::CONTENT_TYPE,
-                HeaderValue::from_static(T::MIME_TYPE),
-            )];
+pub struct TemplateResponse<T> {
+    template: T,
+}
 
-            (headers, body).into_response()
+impl<T: Template> IntoResponse for TemplateResponse<T> {
+    #[instrument(skip_all)]
+    fn into_response(self) -> Response {
+        match self.template.render() {
+            Ok(body) => {
+                let headers = [(
+                    http::header::CONTENT_TYPE,
+                    HeaderValue::from_static(T::MIME_TYPE),
+                )];
+
+                (headers, body).into_response()
+            }
+            Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         }
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub fn into_response<T: Template>(template: T) -> impl IntoResponse {
+    TemplateResponse { template }
+}
+
+pub enum ResponseEither<A, B> {
+    Left(A),
+    Right(B),
+}
+
+impl<A: IntoResponse, B: IntoResponse> IntoResponse for ResponseEither<A, B> {
+    fn into_response(self) -> Response {
+        match self {
+            Self::Left(a) => a.into_response(),
+            Self::Right(b) => b.into_response(),
+        }
     }
 }

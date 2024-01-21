@@ -71,6 +71,7 @@
 
     <tbody>
     {% for commit in commits -%}
+    {% set commit = commit.get() %}
     <tr>
         <td>
             <time datetime="{{ commit.committer.time }}" title="{{ commit.committer.time }}">

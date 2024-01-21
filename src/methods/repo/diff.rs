@@ -11,7 +11,10 @@ use axum::{
 use crate::{
     git::Commit,
     http, into_response,
-    methods::repo::{commit::UriQuery, Repository, RepositoryPath, Result},
+    methods::{
+        filters,
+        repo::{commit::UriQuery, Repository, RepositoryPath, Result},
+    },
     Git,
 };
 
@@ -28,7 +31,7 @@ pub async fn handle(
     Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
     Extension(git): Extension<Arc<Git>>,
     Query(query): Query<UriQuery>,
-) -> Result<Response> {
+) -> Result<impl IntoResponse> {
     let open_repo = git.repo(repository_path, query.branch.clone()).await?;
     let commit = if let Some(commit) = query.id {
         open_repo.commit(&commit).await?
@@ -36,7 +39,7 @@ pub async fn handle(
         Arc::new(open_repo.latest_commit().await?)
     };
 
-    Ok(into_response(&View {
+    Ok(into_response(View {
         repo,
         commit,
         branch: query.branch,

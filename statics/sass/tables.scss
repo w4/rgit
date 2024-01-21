@@ -1,11 +1,26 @@
 @import 'colours';
 
+.table-responsive {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+}
+
 table {
   @media (prefers-color-scheme: dark) {
     color: darken($darkModeHighlightColour, 20%);
   }
 
   border-collapse: collapse;
+
+  th, td {
+    white-space: nowrap;
+    padding-right: 10px;
+
+    &:last-of-type {
+      padding-right: 0;
+    }
+  }
 
   th {
     text-align: left;

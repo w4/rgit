@@ -4,6 +4,7 @@
 {% block refs_nav_class %}active{% endblock %}
 
 {% block content %}
+<div class="table-responsive">
 <table class="repositories">
     {% call refs::branch_table(refs.heads) %}
 
@@ -20,4 +21,5 @@
     {%- call refs::tag_table(refs.tags) -%}
     {%- endif %}
 </table>
+</div>
 {% endblock %}

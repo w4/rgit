@@ -2,6 +2,7 @@
 {% extends "repo/base.html" %}
 
 {% block content %}
+<div class="table-responsive">
 <table class="commit-info">
     <tbody>
     <tr>
@@ -37,6 +38,7 @@
     </tr>
     </tbody>
 </table>
+</div>
 
 <pre class="h2-first-line">{{ tag.message }}</pre>
 {% endblock %}

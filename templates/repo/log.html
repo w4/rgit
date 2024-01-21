@@ -5,9 +5,11 @@
 {% block log_nav_class %}active{% endblock %}
 
 {% block content %}
+<div class="table-responsive">
 <table class="repositories">
     {% call refs::commit_table(commits) %}
 </table>
+</div>
 
 {% if let Some(next_offset) = next_offset %}
 <div class="mt-2 text-center">

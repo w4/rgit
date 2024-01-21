@@ -4,6 +4,7 @@
 {% block summary_nav_class %}active{% endblock %}
 
 {% block content %}
+<div class="table-responsive">
 <table class="repositories">
     {% call refs::branch_table(refs.heads.iter().take(10)) %}
     {%- if refs.heads.len() > 10 -%}
@@ -61,4 +62,5 @@
     </tbody>
     {%- endif %}
 </table>
+</div>
 {% endblock %}

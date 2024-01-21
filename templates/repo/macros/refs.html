@@ -18,7 +18,7 @@
             {{ commit.get().author.name }}
         </td>
         <td>
-            <time datetime="{{ commit.get().author.time }}" title="{{ commit.get().author.time }}">
+            <time datetime="{{ commit.get().author.time|format_time }}" title="{{ commit.get().author.time|format_time }}">
                 {{- commit.get().author.time|timeago -}}
             </time>
         </td>
@@ -50,7 +50,7 @@
         </td>
         <td>
             {% if let Some(tagger) = tag.get().tagger -%}
-            <time datetime="{{ tagger.time }}" title="{{ tagger.time }}">
+            <time datetime="{{ tagger.time|format_time }}" title="{{ tagger.time|format_time }}">
                 {{- tagger.time|timeago -}}
             </time>
             {%- endif %}
@@ -74,7 +74,7 @@
     {% set commit = commit.get() %}
     <tr>
         <td>
-            <time datetime="{{ commit.committer.time }}" title="{{ commit.committer.time }}">
+            <time datetime="{{ commit.committer.time|format_time }}" title="{{ commit.committer.time|format_time }}">
                 {{- commit.committer.time.clone()|timeago -}}
             </time>
         </td>

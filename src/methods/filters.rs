@@ -4,8 +4,9 @@
 use std::borrow::Borrow;
 use time::format_description::well_known::Rfc3339;
 
-pub fn format_time(s: time::OffsetDateTime) -> Result<String, askama::Error> {
-    s.format(&Rfc3339)
+pub fn format_time(s: impl Borrow<time::OffsetDateTime>) -> Result<String, askama::Error> {
+    (*s.borrow())
+        .format(&Rfc3339)
         .map_err(Box::from)
         .map_err(askama::Error::Custom)
 }

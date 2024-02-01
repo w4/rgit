@@ -48,7 +48,7 @@ tower-http = { version = "0.4.4", features = ["cors"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 unix_mode = "0.1"
-uuid = { version = "1.6", features = ["v4"] }
+uuid = { version = "1.7", features = ["v4"] }
 httparse = "1.7"
 yoke = { version = "0.7.1", features = ["derive"] }
 rand = "0.8.5"

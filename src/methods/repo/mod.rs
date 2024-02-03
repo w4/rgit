@@ -77,8 +77,6 @@ where
 
     let mut service = match uri_parts.pop() {
         Some("about") => h!(handle_about),
-        // TODO: https://man.archlinux.org/man/git-http-backend.1.en
-        // TODO: GIT_PROTOCOL
         Some("refs") if uri_parts.last() == Some(&"info") => {
             uri_parts.pop();
             h!(handle_smart_git)

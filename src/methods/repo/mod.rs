@@ -11,14 +11,13 @@ mod tree;
 
 use std::{
     collections::BTreeMap,
-    fmt::Debug,
     ops::Deref,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
 use axum::{
-    body::HttpBody,
+    body::Body,
     handler::HandlerWithoutStateExt,
     http::{Request, StatusCode},
     response::{IntoResponse, Response},
@@ -47,13 +46,7 @@ pub const DEFAULT_BRANCHES: [&str; 2] = ["refs/heads/master", "refs/heads/main"]
 
 // this is some wicked, wicked abuse of axum right here...
 #[allow(clippy::trait_duplication_in_bounds)] // clippy seems a bit.. lost
-pub async fn service<ReqBody>(mut request: Request<ReqBody>) -> Response
-where
-    ReqBody: HttpBody + Send + Debug + 'static,
-    <ReqBody as HttpBody>::Data: Send + Sync,
-    bytes::Bytes: From<ReqBody::Data>,
-    <ReqBody as HttpBody>::Error: std::error::Error + Send + Sync,
-{
+pub async fn service(mut request: Request<Body>) -> Response {
     let scan_path = request
         .extensions()
         .get::<Arc<PathBuf>>()

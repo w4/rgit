@@ -1,12 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context};
-use axum::{
-    body::{boxed, Body, BoxBody},
-    extract::Query,
-    http::Response,
-    Extension,
-};
+use axum::{body::Body, extract::Query, http::Response, Extension};
 use serde::Deserialize;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{error, info_span, Instrument};
@@ -25,7 +20,7 @@ pub async fn handle(
     Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
     Extension(git): Extension<Arc<Git>>,
     Query(query): Query<UriQuery>,
-) -> Result<Response<BoxBody>> {
+) -> Result<Response<Body>> {
     let open_repo = git.repo(repository_path, query.branch.clone()).await?;
 
     // byte stream back to the client
@@ -81,6 +76,6 @@ pub async fn handle(
             "Content-Disposition",
             format!("attachment; filename=\"{file_name}.tar.gz\""),
         )
-        .body(boxed(Body::wrap_stream(ReceiverStream::new(recv))))
+        .body(Body::from_stream(ReceiverStream::new(recv)))
         .context("failed to build response")?)
 }

@@ -2,10 +2,11 @@ use std::{io, io::ErrorKind, path::Path, process::Stdio, str::FromStr};
 
 use anyhow::{anyhow, Context};
 use axum::{
-    body::StreamBody,
-    extract::BodyStream,
-    headers::{HeaderMap, HeaderName, HeaderValue},
-    http::{Method, Uri},
+    body::Body,
+    http::{
+        header::{HeaderMap, HeaderName, HeaderValue},
+        Method, Uri,
+    },
     response::{IntoResponse, Response},
     Extension,
 };
@@ -33,7 +34,7 @@ pub async fn handle(
     method: Method,
     uri: Uri,
     headers: HeaderMap,
-    body: BodyStream,
+    body: Body,
 ) -> Result<impl IntoResponse> {
     let path = extract_path(&uri, &repository)?;
 
@@ -66,7 +67,10 @@ pub async fn handle(
     let mut stdin = child.stdin.take().context("Stdin already taken")?;
 
     // read request body and forward to stdin
-    let mut body = StreamReader::new(body.map_err(|e| std::io::Error::new(ErrorKind::Other, e)));
+    let mut body = StreamReader::new(
+        body.into_data_stream()
+            .map_err(|e| std::io::Error::new(ErrorKind::Other, e)),
+    );
     tokio::io::copy_buf(&mut body, &mut stdin)
         .await
         .context("Failed to copy bytes from request to command stdin")?;
@@ -103,7 +107,7 @@ pub async fn handle(
             .instrument(info_span!("git http-backend reader")),
     );
 
-    Ok((headers, StreamBody::new(ReceiverStream::new(body_recv))))
+    Ok((headers, Body::from_stream(ReceiverStream::new(body_recv))))
 }
 
 /// Forwards the entirety of `stdout` to `body_send`, printing subprocess stderr and status on
@@ -139,7 +143,7 @@ async fn forward_response_to_client(
 async fn print_status(child: &mut Child, stderr: &mut ChildStderr) {
     match tokio::try_join!(child.wait(), read_stderr(stderr)) {
         Ok((status, stderr)) if status.success() => {
-            debug!(stderr, "git http-backend successfully shutdown")
+            debug!(stderr, "git http-backend successfully shutdown");
         }
         Ok((status, stderr)) => error!(stderr, "git http-backend exited with status code {status}"),
         Err(e) => error!("Failed to wait on git http-backend shutdown: {e}"),

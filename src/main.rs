@@ -3,6 +3,7 @@
 use std::{
     borrow::Cow,
     fmt::{Display, Formatter},
+    future::IntoFuture,
     net::SocketAddr,
     path::PathBuf,
     str::FromStr,
@@ -29,6 +30,7 @@ use rocksdb::{Options, SliceTransform};
 use sha2::{digest::FixedOutput, Digest};
 use syntect::html::ClassStyle;
 use tokio::{
+    net::TcpListener,
     signal::unix::{signal, SignalKind},
     sync::mpsc,
 };
@@ -197,8 +199,12 @@ async fn main() -> Result<(), anyhow::Error> {
         .layer(Extension(Arc::new(args.scan_path)))
         .layer(CorsLayer::new());
 
-    let server = axum::Server::bind(&args.bind_address)
-        .serve(app.into_make_service_with_connect_info::<SocketAddr>());
+    let listener = TcpListener::bind(&args.bind_address).await?;
+    let server = axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .into_future();
 
     tokio::select! {
         res = server => res.context("failed to run server"),

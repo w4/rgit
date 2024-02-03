@@ -1,0 +1,17 @@
+#
+#  rgit configuration file
+#  currently only a wish
+#
+
+#  For further discussion:
+#
+#  - format options:
+#    - yaml
+#    - toml
+#    - ......
+#
+#  - options for location:
+#    - fixed, like: /etc/rgit/config
+#    - command line parameter
+#    - environment variable, e.g. RGIT_CONFIG
+#

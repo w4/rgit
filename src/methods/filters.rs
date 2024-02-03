@@ -2,6 +2,7 @@
 #![allow(clippy::unnecessary_wraps, clippy::trivially_copy_pass_by_ref)]
 
 use std::borrow::Borrow;
+
 use time::format_description::well_known::Rfc3339;
 
 pub fn format_time(s: impl Borrow<time::OffsetDateTime>) -> Result<String, askama::Error> {

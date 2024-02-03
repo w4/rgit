@@ -4,13 +4,14 @@ use anyhow::{bail, Context};
 use axum::{
     body::{boxed, Body},
     extract::BodyStream,
-    headers::{ContentType, HeaderName, HeaderValue},
+    headers::{HeaderMap, HeaderName, HeaderValue},
     http::{Method, Uri},
     response::Response,
-    Extension, TypedHeader,
+    Extension,
 };
 use futures::TryStreamExt;
 use httparse::Status;
+use tokio::process::Command;
 use tokio_util::io::StreamReader;
 use tracing::warn;
 
@@ -25,15 +26,20 @@ pub async fn handle(
     Extension(Repository(repository)): Extension<Repository>,
     method: Method,
     uri: Uri,
-    content_type: Option<TypedHeader<ContentType>>,
+    headers: HeaderMap,
     body: BodyStream,
 ) -> Result<Response> {
     let path = extract_path(&uri, &repository)?;
 
-    let mut command = tokio::process::Command::new("git");
+    let mut command = Command::new("git");
 
-    if let Some(content_type) = content_type {
-        command.env("CONTENT_TYPE", content_type.0.to_string());
+    for (header, env) in [
+        ("Content-Type", "CONTENT_TYPE"),
+        ("Content-Length", "CONTENT_LENGTH"),
+        ("Git-Protocol", "GIT_PROTOCOL"),
+        ("Content-Encoding", "HTTP_CONTENT_ENCODING"),
+    ] {
+        extract_header(&headers, &mut command, header, env)?;
     }
 
     let mut child = command
@@ -53,7 +59,7 @@ pub async fn handle(
             StreamReader::new(body.map_err(|e| std::io::Error::new(ErrorKind::Other, e)));
         let mut stdin = child.stdin.take().context("Stdin already taken")?;
 
-        tokio::io::copy(&mut body, &mut stdin)
+        tokio::io::copy_buf(&mut body, &mut stdin)
             .await
             .context("Failed to copy bytes from request to command stdin")?;
     }
@@ -72,6 +78,14 @@ pub async fn handle(
     }
 
     Ok(resp)
+}
+
+fn extract_header(input: &HeaderMap, output: &mut Command, header: &str, env: &str) -> Result<()> {
+    if let Some(value) = input.get(header) {
+        output.env(env, value.to_str().context("Invalid header")?);
+    }
+
+    Ok(())
 }
 
 fn extract_path<'a>(uri: &'a Uri, repository: &Path) -> Result<&'a str> {

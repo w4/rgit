@@ -34,7 +34,7 @@ use tokio::{
     signal::unix::{signal, SignalKind},
     sync::mpsc,
 };
-use tower_http::cors::CorsLayer;
+use tower_http::{cors::CorsLayer, timeout::TimeoutLayer};
 use tower_layer::layer_fn;
 use tracing::{error, info, instrument, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -76,6 +76,9 @@ pub struct Args {
     /// Configures the metadata refresh interval (eg. "never" or "60s")
     #[clap(long, default_value_t = RefreshInterval::Duration(Duration::from_secs(300)))]
     refresh_interval: RefreshInterval,
+    /// Configures the request timeout.
+    #[clap(long, default_value_t = Duration::from_secs(10).into())]
+    request_timeout: humantime::Duration,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -204,6 +207,7 @@ async fn main() -> Result<(), anyhow::Error> {
             get(static_favicon(include_bytes!("../statics/favicon.ico"))),
         )
         .fallback(methods::repo::service)
+        .layer(TimeoutLayer::new(args.request_timeout.into()))
         .layer(layer_fn(LoggingMiddleware))
         .layer(Extension(Arc::new(Git::new(syntax_set))))
         .layer(Extension(db))

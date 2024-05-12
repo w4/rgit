@@ -47,6 +47,11 @@
               description = "Path to repositories";
               type = types.path;
             };
+            requestTimeout = mkOption {
+              default = "10s";
+              description = "Timeout for incoming HTTP requests";
+              type = types.str;
+            };
           };
 
           config = mkIf cfg.enable {
@@ -65,7 +70,7 @@
               path = [ pkgs.git ];
               serviceConfig = {
                 Type = "exec";
-                ExecStart = "${self.defaultPackage."${system}"}/bin/rgit --db-store ${cfg.dbStorePath} ${cfg.bindAddress} ${cfg.repositoryStorePath}";
+                ExecStart = "${self.defaultPackage."${system}"}/bin/rgit --request-timeout ${cfg.requestTimeout} --db-store ${cfg.dbStorePath} ${cfg.bindAddress} ${cfg.repositoryStorePath}";
                 Restart = "on-failure";
 
                 User = "rgit";

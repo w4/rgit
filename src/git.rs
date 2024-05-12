@@ -518,17 +518,6 @@ impl IntoResponse for Content {
 }
 
 #[derive(Debug)]
-pub struct Branch {
-    pub name: String,
-    pub commit: Commit,
-}
-
-#[derive(Debug)]
-pub struct Remote {
-    pub name: String,
-}
-
-#[derive(Debug)]
 pub enum TaggedObject {
     Commit(String),
     Tree(String),

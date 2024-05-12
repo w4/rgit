@@ -37,7 +37,7 @@ use tokio::{
 use tower_http::cors::CorsLayer;
 use tower_layer::layer_fn;
 use tracing::{error, info, instrument, warn};
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use crate::{
     database::schema::prefixes::{
@@ -64,9 +64,9 @@ static DARK_HIGHLIGHT_CSS_HASH: OnceCell<Box<str>> = OnceCell::new();
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
 pub struct Args {
-    /// Path to a directory in which the RocksDB database should be stored, will be created if it doesn't already exist
+    /// Path to a directory in which the `RocksDB` database should be stored, will be created if it doesn't already exist
     ///
-    /// The RocksDB database is very quick to generate, so this can be pointed to temporary storage
+    /// The `RocksDB` database is very quick to generate, so this can be pointed to temporary storage
     #[clap(short, long, value_parser)]
     db_store: PathBuf,
     /// The socket address to bind to (eg. 0.0.0.0:3333)
@@ -115,10 +115,21 @@ async fn main() -> Result<(), anyhow::Error> {
         std::env::set_var("RUST_LOG", "info");
     }
 
-    let subscriber = tracing_subscriber::fmt().with_env_filter(EnvFilter::from_default_env());
+    let console_layer = console_subscriber::spawn();
+
+    let logger_layer = tracing_subscriber::fmt::layer();
     #[cfg(debug_assertions)]
-    let subscriber = subscriber.pretty();
-    subscriber.init();
+    let logger_layer = logger_layer.pretty();
+
+    let env_filter = EnvFilter::from_default_env()
+        .add_directive("tokio=trace".parse()?)
+        .add_directive("runtime=trace".parse()?);
+
+    tracing_subscriber::registry()
+        .with(env_filter)
+        .with(console_layer)
+        .with(logger_layer)
+        .init();
 
     let db = open_db(&args)?;
 
@@ -200,11 +211,8 @@ async fn main() -> Result<(), anyhow::Error> {
         .layer(CorsLayer::new());
 
     let listener = TcpListener::bind(&args.bind_address).await?;
-    let server = axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .into_future();
+    let app = app.into_make_service_with_connect_info::<SocketAddr>();
+    let server = axum::serve(listener, app).into_future();
 
     tokio::select! {
         res = server => res.context("failed to run server"),

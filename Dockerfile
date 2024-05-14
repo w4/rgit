@@ -7,7 +7,7 @@ COPY . /sources
 WORKDIR /sources
 RUN cargo build --release
 
-FROM debian:bullseye-slim
+FROM debian:bookworm-slim
 
 # Install git and cleanup package lists.
 # This is required for git-http-backend to work.

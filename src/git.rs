@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
     ffi::OsStr,
+    fmt,
     fmt::Write,
     path::{Path, PathBuf},
     sync::Arc,
@@ -18,8 +19,8 @@ use git2::{
 use moka::future::Cache;
 use parking_lot::Mutex;
 use syntect::{
-    html::{ClassStyle, ClassedHTMLGenerator},
     parsing::SyntaxSet,
+    parsing::{BasicScopeStackOp, ParseState, Scope, ScopeStack, SCOPE_REPO},
     util::LinesWithEndings,
 };
 use time::OffsetDateTime;
@@ -133,7 +134,12 @@ impl OpenRepository {
                     let content = match (formatted, blob.is_binary()) {
                         (true, true) => Content::Binary(vec![]),
                         (true, false) => Content::Text(
-                            format_file(blob.content(), &extension, &self.git.syntax_set)?.into(),
+                            format_file(
+                                &String::from_utf8_lossy(blob.content()),
+                                &extension,
+                                &self.git.syntax_set,
+                            )?
+                            .into(),
                         ),
                         (false, true) => Content::Binary(blob.content().to_vec()),
                         (false, false) => Content::Text(
@@ -673,25 +679,151 @@ fn fetch_diff_and_stats(
     Ok((diff_plain.freeze(), diff_output, diff_stats))
 }
 
-fn format_file(content: &[u8], extension: &str, syntax_set: &SyntaxSet) -> Result<String> {
-    let content = String::from_utf8_lossy(content);
+fn format_file(content: &str, extension: &str, syntax_set: &SyntaxSet) -> Result<String> {
+    let mut out = String::new();
+    format_file_inner(&mut out, content, extension, syntax_set, true)?;
+    Ok(out)
+}
 
+// TODO: this is in some serious need of refactoring
+fn format_file_inner(
+    out: &mut String,
+    content: &str,
+    extension: &str,
+    syntax_set: &SyntaxSet,
+    code_tag: bool,
+) -> Result<()> {
     let syntax = syntax_set
         .find_syntax_by_extension(extension)
         .unwrap_or_else(|| syntax_set.find_syntax_plain_text());
-    let mut html_generator =
-        ClassedHTMLGenerator::new_with_class_style(syntax, syntax_set, ClassStyle::Spaced);
+    let mut parse_state = ParseState::new(syntax);
 
-    for line in LinesWithEndings::from(&content) {
-        html_generator
-            .parse_html_for_line_which_includes_newline(line)
-            .context("Couldn't parse line of file")?;
+    let mut scope_stack = ScopeStack::new();
+    let mut span_empty = false;
+    let mut span_start = 0;
+    let mut open_spans = Vec::new();
+
+    for line in LinesWithEndings::from(content) {
+        if code_tag {
+            out.push_str("<code>");
+        }
+
+        if line.len() > 2048 {
+            // avoid highlighting overly complex lines
+            write!(out, "{}", Escape(line.trim_end()))?;
+        } else {
+            let mut cur_index = 0;
+            let ops = parse_state.parse_line(line, syntax_set)?;
+            out.reserve(line.len() + ops.len() * 8);
+
+            if code_tag {
+                for scope in &open_spans {
+                    out.push_str("<span class=\"");
+                    scope_to_classes(out, *scope);
+                    out.push_str("\">");
+                }
+            }
+
+            // mostly copied from syntect, but slightly modified to keep track
+            // of open spans, so we can open and close them for each line
+            for &(i, ref op) in &ops {
+                if i > cur_index {
+                    span_empty = false;
+                    write!(out, "{}", Escape(&line[cur_index..i]))?;
+                    cur_index = i;
+                }
+
+                scope_stack.apply_with_hook(op, |basic_op, _| match basic_op {
+                    BasicScopeStackOp::Push(scope) => {
+                        span_start = out.len();
+                        span_empty = true;
+                        out.push_str("<span class=\"");
+                        open_spans.push(scope);
+                        scope_to_classes(out, scope);
+                        out.push_str("\">");
+                    }
+                    BasicScopeStackOp::Pop => {
+                        open_spans.pop();
+                        if span_empty {
+                            out.truncate(span_start);
+                        } else {
+                            out.push_str("</span>");
+                        }
+                        span_empty = false;
+                    }
+                })?;
+            }
+
+            let line = line.trim_end();
+            if line.len() > cur_index {
+                write!(out, "{}", Escape(&line[cur_index..]))?;
+            }
+
+            if code_tag {
+                for _scope in &open_spans {
+                    out.push_str("</span>");
+                }
+            }
+        }
+
+        if code_tag {
+            out.push_str("</code>\n");
+        }
     }
 
-    Ok(format!(
-        "<code>{}</code>",
-        html_generator.finalize().replace('\n', "</code>\n<code>")
-    ))
+    if !code_tag {
+        for _scope in &open_spans {
+            out.push_str("</span>");
+        }
+    }
+
+    Ok(())
+}
+
+fn scope_to_classes(s: &mut String, scope: Scope) {
+    let repo = SCOPE_REPO.lock().unwrap();
+    for i in 0..(scope.len()) {
+        let atom = scope.atom_at(i as usize);
+        let atom_s = repo.atom_str(atom);
+        if i != 0 {
+            s.push(' ');
+        }
+        s.push_str(atom_s);
+    }
+}
+
+// Copied from syntect as it isn't exposed from there.
+pub struct Escape<'a>(pub &'a str);
+
+impl<'a> fmt::Display for Escape<'a> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Escape(s) = *self;
+        let pile_o_bits = s;
+        let mut last = 0;
+        for (i, ch) in s.bytes().enumerate() {
+            match ch as char {
+                '<' | '>' | '&' | '\'' | '"' => {
+                    fmt.write_str(&pile_o_bits[last..i])?;
+                    let s = match ch as char {
+                        '>' => "&gt;",
+                        '<' => "&lt;",
+                        '&' => "&amp;",
+                        '\'' => "&#39;",
+                        '"' => "&quot;",
+                        _ => unreachable!(),
+                    };
+                    fmt.write_str(s)?;
+                    last = i + 1;
+                }
+                _ => {}
+            }
+        }
+
+        if last < s.len() {
+            fmt.write_str(&pile_o_bits[last..])?;
+        }
+        Ok(())
+    }
 }
 
 #[instrument(skip(diff, syntax_set))]
@@ -722,16 +854,13 @@ fn format_diff(diff: &git2::Diff<'_>, syntax_set: &SyntaxSet) -> Result<String> 
         } else {
             Cow::Borrowed("patch")
         };
-        let syntax = syntax_set
-            .find_syntax_by_extension(&extension)
-            .unwrap_or_else(|| syntax_set.find_syntax_plain_text());
-        let mut html_generator =
-            ClassedHTMLGenerator::new_with_class_style(syntax, syntax_set, ClassStyle::Spaced);
-        let _res = html_generator.parse_html_for_line_which_includes_newline(&line);
+
         if let Some(class) = class {
             let _ = write!(diff_output, r#"<span class="diff-{class}">"#);
         }
-        diff_output.push_str(&html_generator.finalize());
+
+        let _res = format_file_inner(&mut diff_output, &line, &extension, syntax_set, false);
+
         if class.is_some() {
             diff_output.push_str("</span>");
         }

@@ -710,7 +710,8 @@ fn format_file_inner(
 
         if line.len() > 2048 {
             // avoid highlighting overly complex lines
-            write!(out, "{}", Escape(line.trim_end()))?;
+            let line = if code_tag { line.trim_end() } else { line };
+            write!(out, "{}", Escape(line))?;
         } else {
             let mut cur_index = 0;
             let ops = parse_state.parse_line(line, syntax_set)?;
@@ -754,7 +755,7 @@ fn format_file_inner(
                 })?;
             }
 
-            let line = line.trim_end();
+            let line = if code_tag { line.trim_end() } else { line };
             if line.len() > cur_index {
                 write!(out, "{}", Escape(&line[cur_index..]))?;
             }

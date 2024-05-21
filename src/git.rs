@@ -729,8 +729,15 @@ fn format_file_inner(
             // of open spans, so we can open and close them for each line
             for &(i, ref op) in &ops {
                 if i > cur_index {
+                    let prefix = &line[cur_index..i];
+                    let prefix = if code_tag {
+                        prefix.trim_end_matches('\n')
+                    } else {
+                        prefix
+                    };
+                    write!(out, "{}", Escape(prefix))?;
+
                     span_empty = false;
-                    write!(out, "{}", Escape(&line[cur_index..i]))?;
                     cur_index = i;
                 }
 

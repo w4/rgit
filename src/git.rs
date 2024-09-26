@@ -1259,7 +1259,7 @@ impl<'a> Callback for SyntaxHighlightedDiffFormatter<'a> {
     }
 
     fn remove(&mut self, data: &str, dst: &mut String) {
-        self.write(dst, "remote-line", data);
+        self.write(dst, "remove-line", data);
     }
 
     fn context(&mut self, data: &str, dst: &mut String) {

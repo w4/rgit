@@ -4,7 +4,7 @@
 
 [See it in action!](https://git.inept.dev/)
 
-A gitweb/cgit-like interface for the modern age. Written in Rust using Axum, git2, Askama and RocksDB.
+A gitweb/cgit-like interface for the modern age. Written in Rust using Axum, gitoxide, Askama and RocksDB.
 
 Includes a dark mode for late night committing.
 
@@ -38,13 +38,13 @@ Includes a dark mode for late night committing.
   [RocksDB][] is used to store all metadata about a repository, including commits, branches, and tags. Metadata is reindexed, and the reindex interval is configurable (default: every 5 minutes), resulting in up to 97% faster load times for large repositories.
 
 - **On-Demand Loading**  
-  Files, trees, and diffs are loaded using [git2][] directly upon request. A small in-memory cache is included for rendered READMEs and diffs, enhancing performance.
+  Files, trees, and diffs are loaded using [gitoxide][] directly upon request. A small in-memory cache is included for rendered READMEs and diffs, enhancing performance.
 
 - **Dark Mode Support**  
   Enjoy a dark mode for late-night committing, providing a visually comfortable experience during extended coding sessions.
 
 [RocksDB]: https://github.com/facebook/rocksdb
-[git2]: https://github.com/rust-lang/git2-rs
+[gitoxide]: https://github.com/Byron/gitoxide
 
 ## Getting Started
 

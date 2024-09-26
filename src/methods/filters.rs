@@ -17,8 +17,8 @@ pub fn timeago(s: impl Borrow<time::OffsetDateTime>) -> Result<String, askama::E
         .convert((time::OffsetDateTime::now_utc() - *s.borrow()).unsigned_abs()))
 }
 
-pub fn file_perms(s: &i32) -> Result<String, askama::Error> {
-    Ok(unix_mode::to_string(s.unsigned_abs()))
+pub fn file_perms(s: &u16) -> Result<String, askama::Error> {
+    Ok(unix_mode::to_string(u32::from(*s)))
 }
 
 pub fn hex(s: &[u8]) -> Result<String, askama::Error> {

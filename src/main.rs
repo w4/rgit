@@ -52,6 +52,7 @@ mod git;
 mod layers;
 mod methods;
 mod syntax_highlight;
+mod unified_diff_builder;
 
 const CRATE_VERSION: &str = clap::crate_version!();
 

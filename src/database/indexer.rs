@@ -8,11 +8,13 @@ use std::{
 };
 
 use anyhow::Context;
-use git2::{ErrorCode, Reference, Sort};
+use gix::bstr::ByteSlice;
+use gix::refs::Category;
+use gix::Reference;
 use ini::Ini;
 use itertools::Itertools;
 use rocksdb::WriteBatch;
-use time::OffsetDateTime;
+use time::{OffsetDateTime, UtcOffset};
 use tracing::{error, info, info_span, instrument, warn};
 
 use crate::database::schema::{
@@ -69,13 +71,15 @@ fn update_repository_metadata(scan_path: &Path, db: &rocksdb::DB) {
 
         let repository_path = scan_path.join(relative);
 
-        let git_repository = match git2::Repository::open(repository_path.clone()) {
+        let mut git_repository = match gix::open(repository_path.clone()) {
             Ok(v) => v,
             Err(error) => {
                 warn!(%error, "Failed to open repository {} to update metadata, skipping", relative.display());
                 continue;
             }
         };
+
+        git_repository.object_cache_size(10 * 1024 * 1024);
 
         let res = Repository {
             id,
@@ -97,21 +101,25 @@ fn update_repository_metadata(scan_path: &Path, db: &rocksdb::DB) {
     }
 }
 
-fn find_default_branch(repo: &git2::Repository) -> Result<Option<String>, git2::Error> {
-    Ok(repo.head()?.name().map(ToString::to_string))
+fn find_default_branch(repo: &gix::Repository) -> Result<Option<String>, anyhow::Error> {
+    Ok(Some(repo.head()?.name().as_bstr().to_string()))
 }
 
-fn find_last_committed_time(repo: &git2::Repository) -> Result<OffsetDateTime, git2::Error> {
+fn find_last_committed_time(repo: &gix::Repository) -> Result<OffsetDateTime, anyhow::Error> {
     let mut timestamp = OffsetDateTime::UNIX_EPOCH;
 
-    for reference in repo.references()? {
-        let Ok(commit) = reference?.peel_to_commit() else {
+    for reference in repo.references()?.all()? {
+        let Ok(commit) = reference.unwrap().peel_to_commit() else {
             continue;
         };
 
-        let committed_time = commit.committer().when().seconds();
-        let committed_time = OffsetDateTime::from_unix_timestamp(committed_time)
+        let committer = commit.committer()?;
+        let mut committed_time = OffsetDateTime::from_unix_timestamp(committer.time.seconds)
             .unwrap_or(OffsetDateTime::UNIX_EPOCH);
+
+        if let Ok(offset) = UtcOffset::from_whole_seconds(committer.time.offset) {
+            committed_time = committed_time.to_offset(offset);
+        }
 
         if committed_time > timestamp {
             timestamp = committed_time;
@@ -145,28 +153,44 @@ fn update_repository_reflog(scan_path: &Path, db: Arc<rocksdb::DB>) {
             }
         };
 
+        let references = match references.all() {
+            Ok(v) => v,
+            Err(error) => {
+                error!(%error, "Failed to read references for {relative_path}");
+                continue;
+            }
+        };
+
         let mut valid_references = Vec::new();
 
-        for reference in references.filter_map(Result::ok) {
-            let reference_name = String::from_utf8_lossy(reference.name_bytes());
-            if !reference_name.starts_with("refs/heads/")
-                && !reference_name.starts_with("refs/tags/")
-            {
+        for reference in references {
+            let mut reference = match reference {
+                Ok(v) => v,
+                Err(error) => {
+                    error!(%error, "Failed to read reference for {relative_path}");
+                    continue;
+                }
+            };
+
+            let reference_name = reference.name();
+            if !matches!(
+                reference_name.category(),
+                Some(Category::Tag | Category::LocalBranch)
+            ) {
                 continue;
             }
 
-            valid_references.push(reference_name.to_string());
+            valid_references.push(reference_name.as_bstr().to_string());
 
             if let Err(error) = branch_index_update(
-                &reference,
-                &reference_name,
+                &mut reference,
                 &relative_path,
                 db_repository.get(),
                 db.clone(),
                 &git_repository,
                 false,
             ) {
-                error!(%error, "Failed to update reflog for {relative_path}@{reference_name}");
+                error!(%error, "Failed to update reflog for {relative_path}@{:?}", valid_references.last());
             }
         }
 
@@ -178,17 +202,16 @@ fn update_repository_reflog(scan_path: &Path, db: Arc<rocksdb::DB>) {
 
 #[instrument(skip(reference, db_repository, db, git_repository))]
 fn branch_index_update(
-    reference: &Reference<'_>,
-    reference_name: &str,
+    reference: &mut Reference<'_>,
     relative_path: &str,
     db_repository: &Repository<'_>,
     db: Arc<rocksdb::DB>,
-    git_repository: &git2::Repository,
+    git_repository: &gix::Repository,
     force_reindex: bool,
 ) -> Result<(), anyhow::Error> {
     info!("Refreshing indexes");
 
-    let commit_tree = db_repository.commit_tree(db.clone(), reference_name);
+    let commit_tree = db_repository.commit_tree(db.clone(), reference.name().as_bstr().to_str()?);
 
     if force_reindex {
         commit_tree.drop_commits()?;
@@ -207,9 +230,13 @@ fn branch_index_update(
         None
     };
 
-    let mut revwalk = git_repository.revwalk()?;
-    revwalk.set_sorting(Sort::REVERSE)?;
-    revwalk.push_ref(reference_name)?;
+    // TODO: stop collecting into a vec
+    let revwalk = git_repository
+        .rev_walk([commit.id().detach()])
+        .all()?
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev();
 
     let tree_len = commit_tree.len()?;
     let mut seen = false;
@@ -221,7 +248,7 @@ fn branch_index_update(
             let rev = rev?;
 
             if let (false, Some(latest_indexed)) = (seen, &latest_indexed) {
-                if rev.as_bytes() == &*latest_indexed.get().hash {
+                if rev.id.as_bytes() == &*latest_indexed.get().hash {
                     seen = true;
                 }
 
@@ -234,11 +261,11 @@ fn branch_index_update(
                 info!("{} commits ingested", i + 1);
             }
 
-            let commit = git_repository.find_commit(rev)?;
-            let author = commit.author();
-            let committer = commit.committer();
+            let commit = rev.object()?;
+            let author = commit.author()?;
+            let committer = commit.committer()?;
 
-            Commit::new(&commit, &author, &committer).insert(
+            Commit::new(&commit, author, committer)?.insert(
                 &commit_tree,
                 tree_len + i,
                 &mut batch,
@@ -255,7 +282,6 @@ fn branch_index_update(
 
         return branch_index_update(
             reference,
-            reference_name,
             relative_path,
             db_repository,
             db,
@@ -299,16 +325,17 @@ fn tag_index_scan(
     relative_path: &str,
     db_repository: &Repository<'_>,
     db: Arc<rocksdb::DB>,
-    git_repository: &git2::Repository,
+    git_repository: &gix::Repository,
 ) -> Result<(), anyhow::Error> {
     let tag_tree = db_repository.tag_tree(db);
 
     let git_tags: HashSet<_> = git_repository
         .references()
         .context("Failed to scan indexes on git repository")?
+        .all()?
         .filter_map(Result::ok)
-        .filter(|v| v.name_bytes().starts_with(b"refs/tags/"))
-        .map(|v| String::from_utf8_lossy(v.name_bytes()).into_owned())
+        .filter(|v| v.name().category() == Some(Category::Tag))
+        .map(|v| v.name().as_bstr().to_string())
         .collect();
     let indexed_tags: HashSet<String> = tag_tree.list()?.into_iter().collect();
 
@@ -329,17 +356,17 @@ fn tag_index_scan(
 #[instrument(skip(git_repository, tag_tree))]
 fn tag_index_update(
     tag_name: &str,
-    git_repository: &git2::Repository,
+    git_repository: &gix::Repository,
     tag_tree: &TagTree,
 ) -> Result<(), anyhow::Error> {
-    let reference = git_repository
+    let mut reference = git_repository
         .find_reference(tag_name)
         .context("Failed to read newly discovered tag")?;
 
     if let Ok(tag) = reference.peel_to_tag() {
         info!("Inserting newly discovered tag to index");
 
-        Tag::new(tag.tagger().as_ref()).insert(tag_tree, tag_name)?;
+        Tag::new(tag.tagger()?)?.insert(tag_tree, tag_name)?;
     }
 
     Ok(())
@@ -359,10 +386,13 @@ fn open_repo<P: AsRef<Path> + Debug>(
     relative_path: P,
     db_repository: &Repository<'_>,
     db: &rocksdb::DB,
-) -> Option<git2::Repository> {
-    match git2::Repository::open(scan_path.join(relative_path.as_ref())) {
-        Ok(v) => Some(v),
-        Err(e) if e.code() == ErrorCode::NotFound => {
+) -> Option<gix::Repository> {
+    match gix::open(scan_path.join(relative_path.as_ref())) {
+        Ok(mut v) => {
+            v.object_cache_size(10 * 1024 * 1024);
+            Some(v)
+        }
+        Err(gix::open::Error::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
             warn!("Repository gone from disk, removing from db");
 
             if let Err(error) = db_repository.delete(db, relative_path) {

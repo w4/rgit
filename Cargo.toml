@@ -20,7 +20,7 @@ console-subscriber = { version = "0.2", features = ["parking_lot"] }
 comrak = "0.21.0"
 clap = { version = "4.4.10", features = ["cargo", "derive"] }
 futures = "0.3"
-git2 = "0.18.0"
+gix = "0.66"
 hex = "0.4"
 humantime = "2.1"
 itertools = "0.12"

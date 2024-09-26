@@ -15,7 +15,7 @@ SYNOPSIS
 DESCRIPTION
 ===========
 
-A gitweb/cgit-like interface for the modern age. Written in Rust using Axum, git2, Askama, and RocksDB.  
+A gitweb/cgit-like interface for the modern age. Written in Rust using Axum, gitoxide, Askama, and RocksDB.  
   
 _bind_address_ 
 

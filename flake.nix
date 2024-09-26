@@ -15,10 +15,9 @@
         defaultPackage = naersk-lib.buildPackage {
           root = ./.;
           nativeBuildInputs = with pkgs; [ pkg-config clang ];
-          buildInputs = with pkgs; [ openssl zlib libssh2 libgit2 ];
+          buildInputs = with pkgs; [ ];
           LIBCLANG_PATH = "${pkgs.clang.cc.lib}/lib";
           ROCKSDB_LIB_DIR = "${pkgs.rocksdb}/lib";
-          LIBSSH2_SYS_USE_PKG_CONFIG = "true";
         };
         devShell = with pkgs; mkShell {
           buildInputs = [ cargo rustc rustfmt pre-commit rustPackages.clippy ];

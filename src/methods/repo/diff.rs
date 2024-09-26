@@ -1,13 +1,5 @@
 use std::sync::Arc;
 
-use askama::Template;
-use axum::{
-    extract::Query,
-    http::HeaderValue,
-    response::{IntoResponse, Response},
-    Extension,
-};
-
 use crate::{
     git::Commit,
     http, into_response,
@@ -17,6 +9,17 @@ use crate::{
     },
     Git,
 };
+use askama::Template;
+use axum::{
+    extract::Query,
+    http::HeaderValue,
+    response::{IntoResponse, Response},
+    Extension,
+};
+use bytes::{BufMut, BytesMut};
+use clap::crate_version;
+use std::fmt::Write;
+use time::format_description::well_known::Rfc2822;
 
 #[derive(Template)]
 #[template(path = "repo/diff.html")]
@@ -34,9 +37,9 @@ pub async fn handle(
 ) -> Result<impl IntoResponse> {
     let open_repo = git.repo(repository_path, query.branch.clone()).await?;
     let commit = if let Some(commit) = query.id {
-        open_repo.commit(&commit).await?
+        open_repo.commit(&commit, true).await?
     } else {
-        Arc::new(open_repo.latest_commit().await?)
+        Arc::new(open_repo.latest_commit(true).await?)
     };
 
     Ok(into_response(View {
@@ -53,9 +56,9 @@ pub async fn handle_plain(
 ) -> Result<Response> {
     let open_repo = git.repo(repository_path, query.branch).await?;
     let commit = if let Some(commit) = query.id {
-        open_repo.commit(&commit).await?
+        open_repo.commit(&commit, false).await?
     } else {
-        Arc::new(open_repo.latest_commit().await?)
+        Arc::new(open_repo.latest_commit(false).await?)
     };
 
     let headers = [(
@@ -63,5 +66,38 @@ pub async fn handle_plain(
         HeaderValue::from_static("text/plain"),
     )];
 
-    Ok((headers, commit.diff_plain.clone()).into_response())
+    let mut data = BytesMut::new();
+
+    writeln!(data, "From {} Mon Sep 17 00:00:00 2001", commit.oid()).unwrap();
+    writeln!(
+        data,
+        "From: {} <{}>",
+        commit.author().name(),
+        commit.author().email()
+    )
+    .unwrap();
+
+    write!(data, "Date: ").unwrap();
+    let mut writer = data.writer();
+    commit
+        .author()
+        .time()
+        .format_into(&mut writer, &Rfc2822)
+        .unwrap();
+    let mut data = writer.into_inner();
+    writeln!(data).unwrap();
+
+    writeln!(data, "Subject: [PATCH] {}\n", commit.summary()).unwrap();
+
+    write!(data, "{}", commit.body()).unwrap();
+
+    writeln!(data, "---").unwrap();
+
+    data.extend_from_slice(commit.diff_stats.as_bytes());
+    data.extend_from_slice(b"\n");
+    data.extend_from_slice(commit.diff.as_bytes());
+
+    writeln!(data, "--\nrgit {}", crate_version!()).unwrap();
+
+    Ok((headers, data.freeze()).into_response())
 }

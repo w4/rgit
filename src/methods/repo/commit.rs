@@ -54,9 +54,9 @@ pub async fn handle(
     };
 
     let commit = if let Some(commit) = query.id.as_deref() {
-        open_repo.commit(commit).await?
+        open_repo.commit(commit, true).await?
     } else {
-        Arc::new(open_repo.latest_commit().await?)
+        Arc::new(open_repo.latest_commit(true).await?)
     };
 
     Ok(into_response(View {

@@ -1,37 +1,49 @@
-use std::{
-    borrow::Cow,
-    ffi::OsStr,
-    fmt,
-    fmt::Write,
-    path::{Path, PathBuf},
-    sync::Arc,
-    time::Duration,
-};
-
 use anyhow::{anyhow, Context, Result};
 use axum::response::IntoResponse;
+use bytes::buf::Writer;
 use bytes::{BufMut, Bytes, BytesMut};
 use comrak::{ComrakPlugins, Options};
-use git2::{
-    DiffFormat, DiffLineType, DiffOptions, DiffStatsFormat, Email, EmailCreateOptions, ObjectType,
-    Oid, Signature, TreeWalkResult,
+use flate2::write::GzEncoder;
+use gix::{
+    actor::SignatureRef,
+    bstr::{BStr, BString, ByteSlice, ByteVec},
+    diff::blob::{platform::prepare_diff::Operation, Sink},
+    object::Kind,
+    objs::tree::EntryRef,
+    prelude::TreeEntryRefExt,
+    traverse::tree::visit::Action,
+    ObjectId,
 };
 use moka::future::Cache;
 use parking_lot::Mutex;
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, VecDeque},
+    ffi::OsStr,
+    fmt::{self, Arguments, Write},
+    path::{Path, PathBuf},
+    str::FromStr,
+    sync::Arc,
+    time::Duration,
+};
 use syntect::{
     parsing::SyntaxSet,
     parsing::{BasicScopeStackOp, ParseState, Scope, ScopeStack, SCOPE_REPO},
     util::LinesWithEndings,
 };
-use time::OffsetDateTime;
+use tar::Builder;
+use time::{OffsetDateTime, UtcOffset};
 use tracing::{error, instrument, warn};
 
-use crate::syntax_highlight::ComrakSyntectAdapter;
+use crate::{
+    syntax_highlight::ComrakSyntectAdapter,
+    unified_diff_builder::{Callback, UnifiedDiffBuilder},
+};
 
 type ReadmeCacheKey = (PathBuf, Option<Arc<str>>);
 
 pub struct Git {
-    commits: Cache<Oid, Arc<Commit>>,
+    commits: Cache<(ObjectId, bool), Arc<Commit>>,
     readme_cache: Cache<ReadmeCacheKey, Option<(ReadmeFormat, Arc<str>)>>,
     syntax_set: SyntaxSet,
 }
@@ -60,9 +72,9 @@ impl Git {
         repo_path: PathBuf,
         branch: Option<Arc<str>>,
     ) -> Result<Arc<OpenRepository>> {
-        let repo = tokio::task::spawn_blocking({
+        let mut repo = tokio::task::spawn_blocking({
             let repo_path = repo_path.clone();
-            move || git2::Repository::open(repo_path)
+            move || gix::open(repo_path)
         })
         .await
         .context("Failed to join Tokio task")?
@@ -70,6 +82,8 @@ impl Git {
             error!("{}", err);
             anyhow!("Failed to open repository")
         })?;
+
+        repo.object_cache_size(10 * 1024 * 1024);
 
         Ok(Arc::new(OpenRepository {
             git: self,
@@ -83,7 +97,7 @@ impl Git {
 pub struct OpenRepository {
     git: Arc<Git>,
     cache_key: PathBuf,
-    repo: Mutex<git2::Repository>,
+    repo: Mutex<gix::Repository>,
     branch: Option<Arc<str>>,
 }
 
@@ -95,7 +109,7 @@ impl OpenRepository {
         formatted: bool,
     ) -> Result<PathDestination> {
         let tree_id = tree_id
-            .map(Oid::from_str)
+            .map(ObjectId::from_str)
             .transpose()
             .context("Failed to parse tree hash")?;
 
@@ -106,87 +120,88 @@ impl OpenRepository {
                 repo.find_tree(tree_id)
                     .context("Couldn't find tree with given id")?
             } else if let Some(branch) = &self.branch {
-                let reference = repo.resolve_reference_from_short_name(branch)?;
-                reference
+                repo.find_reference(branch.as_ref())?
                     .peel_to_tree()
                     .context("Couldn't find tree for reference")?
             } else {
-                let head = repo.head().context("Failed to find HEAD")?;
-                head.peel_to_tree()
-                    .context("Couldn't find tree from HEAD")?
+                repo.find_reference("HEAD")
+                    .context("Failed to find HEAD")?
+                    .peel_to_tree()
+                    .context("Couldn't find HEAD for reference")?
             };
 
             if let Some(path) = path.as_ref() {
-                let item = tree.get_path(path).context("Path doesn't exist in tree")?;
-                let object = item
-                    .to_object(&repo)
-                    .context("Path in tree isn't an object")?;
+                let item = tree
+                    .peel_to_entry_by_path(path)?
+                    .context("Path doesn't exist in tree")?;
+                let object = item.object().context("Path in tree isn't an object")?;
 
-                if let Some(blob) = object.as_blob() {
-                    // TODO: use Path here instead of a lossy utf8 conv
-                    let name = String::from_utf8_lossy(item.name_bytes());
-                    let path = path.clone().join(&*name);
+                match object.kind {
+                    Kind::Blob => {
+                        let path = path.join(item.filename().to_path_lossy());
+                        let mut blob = object.into_blob();
 
-                    let extension = path
-                        .extension()
-                        .or_else(|| path.file_name())
-                        .map_or_else(|| Cow::Borrowed(""), OsStr::to_string_lossy);
-                    let content = match (formatted, blob.is_binary()) {
-                        (true, true) => Content::Binary(vec![]),
-                        (true, false) => Content::Text(
-                            format_file(
-                                &String::from_utf8_lossy(blob.content()),
+                        let size = blob.data.len();
+                        let extension = path
+                            .extension()
+                            .or_else(|| path.file_name())
+                            .map_or_else(|| Cow::Borrowed(""), OsStr::to_string_lossy);
+
+                        let content = match (formatted, String::from_utf8(blob.take_data())) {
+                            (true, Err(_)) => Content::Binary(vec![]),
+                            (true, Ok(data)) => Content::Text(Cow::Owned(format_file(
+                                &data,
                                 &extension,
                                 &self.git.syntax_set,
-                            )?
-                            .into(),
-                        ),
-                        (false, true) => Content::Binary(blob.content().to_vec()),
-                        (false, false) => Content::Text(
-                            String::from_utf8_lossy(blob.content()).to_string().into(),
-                        ),
-                    };
+                            )?)),
+                            (false, Err(e)) => Content::Binary(e.into_bytes()),
+                            (false, Ok(data)) => Content::Text(Cow::Owned(data)),
+                        };
 
-                    return Ok(PathDestination::File(FileWithContent {
-                        metadata: File {
-                            mode: item.filemode(),
-                            size: blob.size(),
-                            path,
-                            name: name.into_owned(),
-                        },
-                        content,
-                    }));
-                } else if let Ok(new_tree) = object.into_tree() {
-                    tree = new_tree;
-                } else {
-                    anyhow::bail!("Given path not tree nor blob... what is it?!");
+                        return Ok(PathDestination::File(FileWithContent {
+                            metadata: File {
+                                mode: item.mode().0,
+                                size,
+                                path: path.clone(),
+                                name: item.filename().to_string(),
+                            },
+                            content,
+                        }));
+                    }
+                    Kind::Tree => {
+                        tree = object.into_tree();
+                    }
+                    _ => anyhow::bail!("bad object of type {:?}", object.kind),
                 }
             }
 
             let mut tree_items = Vec::new();
 
-            for item in &tree {
+            for item in tree.iter() {
+                let item = item?;
                 let object = item
-                    .to_object(&repo)
+                    .object()
                     .context("Expected item in tree to be object but it wasn't")?;
 
-                let name = String::from_utf8_lossy(item.name_bytes()).into_owned();
-                let path = path.clone().unwrap_or_default().join(&name);
+                let path = path
+                    .clone()
+                    .unwrap_or_default()
+                    .join(item.filename().to_path_lossy());
 
-                if let Some(blob) = object.as_blob() {
-                    tree_items.push(TreeItem::File(File {
-                        mode: item.filemode(),
-                        size: blob.size(),
+                tree_items.push(match object.kind {
+                    Kind::Blob => TreeItem::File(File {
+                        mode: item.mode().0,
+                        size: object.into_blob().data.len(),
                         path,
-                        name,
-                    }));
-                } else if let Some(_tree) = object.as_tree() {
-                    tree_items.push(TreeItem::Tree(Tree {
-                        mode: item.filemode(),
+                        name: item.filename().to_string(),
+                    }),
+                    Kind::Tree => TreeItem::Tree(Tree {
+                        mode: item.mode().0,
                         path,
-                        name,
-                    }));
-                }
+                        name: item.filename().to_string(),
+                    }),
+                    _ => continue,
+                });
             }
 
             Ok(PathDestination::Tree(tree_items))
@@ -206,21 +221,23 @@ impl OpenRepository {
                 .context("Given tag does not exist in repository")?
                 .peel_to_tag()
                 .context("Couldn't get to a tag from the given reference")?;
-            let tag_target = tag.target().context("Couldn't find tagged object")?;
+            let tag_target = tag
+                .target_id()
+                .context("Couldn't find tagged object")?
+                .object()?;
 
-            let tagged_object = match tag_target.kind() {
-                Some(ObjectType::Commit) => Some(TaggedObject::Commit(tag_target.id().to_string())),
-                Some(ObjectType::Tree) => Some(TaggedObject::Tree(tag_target.id().to_string())),
-                None | Some(_) => None,
+            let tagged_object = match tag_target.kind {
+                Kind::Commit => Some(TaggedObject::Commit(tag_target.id.to_string())),
+                Kind::Tree => Some(TaggedObject::Tree(tag_target.id.to_string())),
+                _ => None,
             };
+
+            let tag_info = tag.decode()?;
 
             Ok(DetailedTag {
                 name: tag_name,
-                tagger: tag.tagger().map(TryInto::try_into).transpose()?,
-                message: tag
-                    .message_bytes()
-                    .map_or_else(|| Cow::Borrowed(""), String::from_utf8_lossy)
-                    .into_owned(),
+                tagger: tag_info.tagger.map(TryInto::try_into).transpose()?,
+                message: tag_info.message.to_string(),
                 tagged_object,
             })
         })
@@ -241,33 +258,34 @@ impl OpenRepository {
                 tokio::task::spawn_blocking(move || {
                     let repo = self.repo.lock();
 
-                    let head = if let Some(reference) = &self.branch {
-                        repo.resolve_reference_from_short_name(reference)?
+                    let mut head = if let Some(reference) = &self.branch {
+                        repo.find_reference(reference.as_ref())?
                     } else {
-                        repo.head().context("Couldn't find HEAD of repository")?
+                        repo.find_reference("HEAD")
+                            .context("Couldn't find HEAD of repository")?
                     };
 
                     let commit = head.peel_to_commit().context(
                         "Couldn't find the commit that the HEAD of the repository refers to",
                     )?;
-                    let tree = commit
+                    let mut tree = commit
                         .tree()
                         .context("Couldn't get the tree that the HEAD refers to")?;
 
                     for name in README_FILES {
-                        let Some(tree_entry) = tree.get_name(name) else {
+                        let Some(tree_entry) = tree.peel_to_entry_by_path(name)? else {
                             continue;
                         };
 
                         let Some(blob) = tree_entry
-                            .to_object(&repo)
+                            .object()
                             .ok()
-                            .and_then(|v| v.into_blob().ok())
+                            .and_then(|v| v.try_into_blob().ok())
                         else {
                             continue;
                         };
 
-                        let Ok(content) = std::str::from_utf8(blob.content()) else {
+                        let Ok(content) = std::str::from_utf8(&blob.data) else {
                             continue;
                         };
 
@@ -291,33 +309,33 @@ impl OpenRepository {
         tokio::task::spawn_blocking(move || {
             let repo = self.repo.lock();
             let head = repo.head().context("Couldn't find HEAD of repository")?;
-            Ok(head.shorthand().map(ToString::to_string))
+            Ok(head.referent_name().map(|v| v.shorten().to_string()))
         })
         .await
         .context("Failed to join Tokio task")?
     }
 
     #[instrument(skip(self))]
-    pub async fn latest_commit(self: Arc<Self>) -> Result<Commit> {
+    pub async fn latest_commit(self: Arc<Self>, highlighted: bool) -> Result<Commit> {
         tokio::task::spawn_blocking(move || {
             let repo = self.repo.lock();
 
-            let head = if let Some(reference) = &self.branch {
-                repo.resolve_reference_from_short_name(reference)?
+            let mut head = if let Some(reference) = &self.branch {
+                repo.find_reference(reference.as_ref())?
             } else {
-                repo.head().context("Couldn't find HEAD of repository")?
+                repo.find_reference("HEAD")
+                    .context("Couldn't find HEAD of repository")?
             };
 
             let commit = head
                 .peel_to_commit()
                 .context("Couldn't find commit HEAD of repository refers to")?;
-            let (diff_plain, diff_output, diff_stats) =
-                fetch_diff_and_stats(&repo, &commit, &self.git.syntax_set)?;
+            let (diff_output, diff_stats) =
+                fetch_diff_and_stats(&repo, &commit, highlighted.then_some(&self.git.syntax_set))?;
 
             let mut commit = Commit::try_from(commit)?;
             commit.diff_stats = diff_stats;
             commit.diff = diff_output;
-            commit.diff_plain = diff_plain;
             Ok(commit)
         })
         .await
@@ -331,28 +349,20 @@ impl OpenRepository {
         cont: tokio::sync::oneshot::Sender<()>,
         commit: Option<&str>,
     ) -> Result<(), anyhow::Error> {
-        const BUFFER_CAP: usize = 512 * 1024;
-
         let commit = commit
-            .map(Oid::from_str)
+            .map(ObjectId::from_str)
             .transpose()
             .context("failed to build oid")?;
 
         tokio::task::spawn_blocking(move || {
-            let buffer = BytesMut::with_capacity(BUFFER_CAP + 1024);
-
-            let flate = flate2::write::GzEncoder::new(buffer.writer(), flate2::Compression::fast());
-            let mut archive = tar::Builder::new(flate);
-
             let repo = self.repo.lock();
 
             let tree = if let Some(commit) = commit {
                 repo.find_commit(commit)?.tree()?
             } else if let Some(reference) = &self.branch {
-                repo.resolve_reference_from_short_name(reference)?
-                    .peel_to_tree()?
+                repo.find_reference(reference.as_ref())?.peel_to_tree()?
             } else {
-                repo.head()
+                repo.find_reference("HEAD")
                     .context("Couldn't find HEAD of repository")?
                     .peel_to_tree()?
             };
@@ -362,41 +372,23 @@ impl OpenRepository {
                 return Err(anyhow!("requester gone"));
             }
 
-            let mut callback = |root: &str, entry: &git2::TreeEntry| -> TreeWalkResult {
-                if let Ok(blob) = entry.to_object(&repo).unwrap().peel_to_blob() {
-                    let path =
-                        Path::new(root).join(String::from_utf8_lossy(entry.name_bytes()).as_ref());
-
-                    let mut header = tar::Header::new_gnu();
-                    if let Err(error) = header.set_path(&path) {
-                        warn!(%error, "Attempted to write invalid path to archive");
-                        return TreeWalkResult::Skip;
-                    }
-                    header.set_size(blob.size() as u64);
-                    #[allow(clippy::cast_sign_loss)]
-                    header.set_mode(entry.filemode() as u32);
-                    header.set_cksum();
-
-                    if let Err(error) = archive.append(&header, blob.content()) {
-                        error!(%error, "Failed to write blob to archive");
-                        return TreeWalkResult::Abort;
-                    }
-                }
-
-                if archive.get_ref().get_ref().get_ref().len() >= BUFFER_CAP {
-                    let b = archive.get_mut().get_mut().get_mut().split().freeze();
-                    if let Err(error) = res.blocking_send(Ok(b)) {
-                        error!(%error, "Failed to send buffer to client");
-                        return TreeWalkResult::Abort;
-                    }
-                }
-
-                TreeWalkResult::Ok
+            let buffer = BytesMut::with_capacity(BUFFER_CAP + 1024);
+            let mut visitor = ArchivalVisitor {
+                repository: &repo,
+                res,
+                archive: Builder::new(GzEncoder::new(buffer.writer(), flate2::Compression::fast())),
+                path_deque: VecDeque::new(),
+                path: BString::default(),
             };
 
-            tree.walk(git2::TreeWalkMode::PreOrder, &mut callback)?;
+            tree.traverse().breadthfirst(&mut visitor)?;
 
-            res.blocking_send(Ok(archive.into_inner()?.finish()?.into_inner().freeze()))?;
+            visitor.res.blocking_send(Ok(visitor
+                .archive
+                .into_inner()?
+                .finish()?
+                .into_inner()
+                .freeze()))?;
 
             Ok::<_, anyhow::Error>(())
         })
@@ -406,26 +398,33 @@ impl OpenRepository {
     }
 
     #[instrument(skip(self))]
-    pub async fn commit(self: Arc<Self>, commit: &str) -> Result<Arc<Commit>, Arc<anyhow::Error>> {
-        let commit = Oid::from_str(commit)
+    pub async fn commit(
+        self: Arc<Self>,
+        commit: &str,
+        highlighted: bool,
+    ) -> Result<Arc<Commit>, Arc<anyhow::Error>> {
+        let commit = ObjectId::from_str(commit)
             .map_err(anyhow::Error::from)
             .map_err(Arc::new)?;
 
         let git = self.git.clone();
 
         git.commits
-            .try_get_with(commit, async move {
+            .try_get_with((commit, highlighted), async move {
                 tokio::task::spawn_blocking(move || {
                     let repo = self.repo.lock();
 
                     let commit = repo.find_commit(commit)?;
-                    let (diff_plain, diff_output, diff_stats) =
-                        fetch_diff_and_stats(&repo, &commit, &self.git.syntax_set)?;
+
+                    let (diff_output, diff_stats) = fetch_diff_and_stats(
+                        &repo,
+                        &commit,
+                        highlighted.then_some(&self.git.syntax_set),
+                    )?;
 
                     let mut commit = Commit::try_from(commit)?;
                     commit.diff_stats = diff_stats;
                     commit.diff = diff_output;
-                    commit.diff_plain = diff_plain;
 
                     Ok(Arc::new(commit))
                 })
@@ -433,6 +432,98 @@ impl OpenRepository {
                 .context("Failed to join Tokio task")?
             })
             .await
+    }
+}
+
+const BUFFER_CAP: usize = 512 * 1024;
+
+pub struct ArchivalVisitor<'a> {
+    repository: &'a gix::Repository,
+    res: tokio::sync::mpsc::Sender<Result<Bytes, anyhow::Error>>,
+    archive: Builder<GzEncoder<Writer<BytesMut>>>,
+    path_deque: VecDeque<BString>,
+    path: BString,
+}
+
+impl<'a> ArchivalVisitor<'a> {
+    fn pop_element(&mut self) {
+        if let Some(pos) = self.path.rfind_byte(b'/') {
+            self.path.resize(pos, 0);
+        } else {
+            self.path.clear();
+        }
+    }
+
+    fn push_element(&mut self, name: &BStr) {
+        if !self.path.is_empty() {
+            self.path.push(b'/');
+        }
+        self.path.push_str(name);
+    }
+}
+
+impl<'a> gix::traverse::tree::Visit for ArchivalVisitor<'a> {
+    fn pop_front_tracked_path_and_set_current(&mut self) {
+        self.path = self
+            .path_deque
+            .pop_front()
+            .expect("every call is matched with push_tracked_path_component");
+    }
+
+    fn push_back_tracked_path_component(&mut self, component: &BStr) {
+        self.push_element(component);
+        self.path_deque.push_back(self.path.clone());
+    }
+
+    fn push_path_component(&mut self, component: &BStr) {
+        self.push_element(component);
+    }
+
+    fn pop_path_component(&mut self) {
+        self.pop_element();
+    }
+
+    fn visit_tree(&mut self, _entry: &EntryRef<'_>) -> Action {
+        Action::Continue
+    }
+
+    fn visit_nontree(&mut self, entry: &EntryRef<'_>) -> Action {
+        let entry = entry.attach(self.repository);
+
+        let Ok(object) = entry.object() else {
+            return Action::Continue;
+        };
+
+        if object.kind != Kind::Blob {
+            return Action::Continue;
+        }
+
+        let blob = object.into_blob();
+
+        let mut header = tar::Header::new_gnu();
+        if let Err(error) = header.set_path(self.path.to_path_lossy()) {
+            warn!(%error, "Attempted to write invalid path to archive");
+            return Action::Continue;
+        }
+        header.set_size(blob.data.len() as u64);
+        #[allow(clippy::cast_sign_loss)]
+        header.set_mode(entry.mode().0.into());
+        header.set_cksum();
+
+        if let Err(error) = self.archive.append(&header, blob.data.as_slice()) {
+            warn!(%error, "Failed to append to archive");
+            return Action::Cancel;
+        }
+
+        if self.archive.get_ref().get_ref().get_ref().len() >= BUFFER_CAP {
+            let b = self.archive.get_mut().get_mut().get_mut().split().freeze();
+
+            if self.res.blocking_send(Ok(b)).is_err() {
+                return Action::Cancel;
+            }
+        }
+
+        Action::Continue
     }
 }
 
@@ -473,20 +564,21 @@ pub enum TreeItem {
 
 #[derive(Debug)]
 pub struct Tree {
-    pub mode: i32,
+    pub mode: u16,
     pub name: String,
     pub path: PathBuf,
 }
 
 #[derive(Debug)]
 pub struct File {
-    pub mode: i32,
+    pub mode: u16,
     pub size: usize,
     pub name: String,
     pub path: PathBuf,
 }
 
 #[derive(Debug)]
+#[allow(unused)]
 pub struct FileWithContent {
     pub metadata: File,
     pub content: Content,
@@ -544,14 +636,15 @@ pub struct CommitUser {
     time: OffsetDateTime,
 }
 
-impl TryFrom<Signature<'_>> for CommitUser {
+impl TryFrom<SignatureRef<'_>> for CommitUser {
     type Error = anyhow::Error;
 
-    fn try_from(v: Signature<'_>) -> Result<Self> {
+    fn try_from(v: SignatureRef<'_>) -> Result<Self> {
         Ok(CommitUser {
-            name: String::from_utf8_lossy(v.name_bytes()).into_owned(),
-            email: String::from_utf8_lossy(v.email_bytes()).into_owned(),
-            time: OffsetDateTime::from_unix_timestamp(v.when().seconds())?,
+            name: v.name.to_string(),
+            email: v.email.to_string(),
+            time: OffsetDateTime::from_unix_timestamp(v.time.seconds)?
+                .to_offset(UtcOffset::from_whole_seconds(v.time.offset)?),
         })
     }
 }
@@ -581,30 +674,24 @@ pub struct Commit {
     body: String,
     pub diff_stats: String,
     pub diff: String,
-    pub diff_plain: Bytes,
 }
 
-impl TryFrom<git2::Commit<'_>> for Commit {
+impl TryFrom<gix::Commit<'_>> for Commit {
     type Error = anyhow::Error;
 
-    fn try_from(commit: git2::Commit<'_>) -> Result<Self> {
+    fn try_from(commit: gix::Commit<'_>) -> Result<Self> {
+        let message = commit.message()?;
+
         Ok(Commit {
-            author: CommitUser::try_from(commit.author())?,
-            committer: CommitUser::try_from(commit.committer())?,
+            author: CommitUser::try_from(commit.author()?)?,
+            committer: CommitUser::try_from(commit.committer()?)?,
             oid: commit.id().to_string(),
-            tree: commit.tree_id().to_string(),
+            tree: commit.tree_id()?.to_string(),
             parents: commit.parent_ids().map(|v| v.to_string()).collect(),
-            summary: commit
-                .summary_bytes()
-                .map_or_else(|| Cow::Borrowed(""), String::from_utf8_lossy)
-                .into_owned(),
-            body: commit
-                .body_bytes()
-                .map_or_else(|| Cow::Borrowed(""), String::from_utf8_lossy)
-                .into_owned(),
+            summary: message.summary().to_string(),
+            body: message.body.map_or_else(String::new, ToString::to_string),
             diff_stats: String::with_capacity(0),
             diff: String::with_capacity(0),
-            diff_plain: Bytes::new(),
         })
     }
 }
@@ -641,42 +728,134 @@ impl Commit {
 
 #[instrument(skip(repo, commit, syntax_set))]
 fn fetch_diff_and_stats(
-    repo: &git2::Repository,
-    commit: &git2::Commit<'_>,
-    syntax_set: &SyntaxSet,
-) -> Result<(Bytes, String, String)> {
+    repo: &gix::Repository,
+    commit: &gix::Commit<'_>,
+    syntax_set: Option<&SyntaxSet>,
+) -> Result<(String, String)> {
+    const WIDTH: usize = 80;
+
     let current_tree = commit.tree().context("Couldn't get tree for the commit")?;
-    let parent_tree = commit.parents().next().and_then(|v| v.tree().ok());
-    let mut diff_opts = DiffOptions::new();
-    let diff = repo.diff_tree_to_tree(
-        parent_tree.as_ref(),
-        Some(&current_tree),
-        Some(&mut diff_opts),
+    let parent_tree = commit
+        .ancestors()
+        .first_parent_only()
+        .all()?
+        .nth(1)
+        .transpose()?
+        .map(|v| v.object())
+        .transpose()?
+        .map(|v| v.tree())
+        .transpose()?
+        .unwrap_or_else(|| repo.empty_tree());
+
+    let mut diffs = BTreeMap::<_, FileDiff>::new();
+    let mut diff_output = String::new();
+
+    let mut resource_cache = repo.diff_resource_cache_for_tree_diff()?;
+
+    let mut changes = parent_tree.changes()?;
+    changes.track_path().track_rewrites(None);
+    changes.for_each_to_obtain_tree_with_cache(
+        &current_tree,
+        &mut repo.diff_resource_cache_for_tree_diff()?,
+        |change| {
+            if let Some(syntax_set) = syntax_set {
+                DiffBuilder {
+                    output: &mut diff_output,
+                    resource_cache: &mut resource_cache,
+                    diffs: &mut diffs,
+                    formatter: SyntaxHighlightedDiffFormatter::new(
+                        change.location.to_path().unwrap(),
+                        syntax_set,
+                    ),
+                }
+                .handle(change)
+            } else {
+                DiffBuilder {
+                    output: &mut diff_output,
+                    resource_cache: &mut resource_cache,
+                    diffs: &mut diffs,
+                    formatter: PlainDiffFormatter,
+                }
+                .handle(change)
+            }
+        },
     )?;
 
-    let mut diff_plain = BytesMut::new();
-    let email = Email::from_diff(
-        &diff,
-        1,
-        1,
-        &commit.id(),
-        commit.summary().unwrap_or(""),
-        commit.body().unwrap_or(""),
-        &commit.author(),
-        &mut EmailCreateOptions::default(),
-    )
-    .context("Couldn't build diff for commit")?;
-    diff_plain.extend_from_slice(email.as_slice());
+    let (max_file_name_length, max_change_length, files_changed, insertions, deletions) =
+        diffs.iter().fold(
+            (0, 0, 0, 0, 0),
+            |(max_file_name_length, max_change_length, files_changed, insertions, deletions),
+             (f, stats)| {
+                (
+                    max_file_name_length.max(f.len()),
+                    max_change_length
+                        .max(((stats.insertions + stats.deletions).ilog10() + 1) as usize),
+                    files_changed + 1,
+                    insertions + stats.insertions,
+                    deletions + stats.deletions,
+                )
+            },
+        );
 
-    let diff_stats = diff
-        .stats()?
-        .to_buf(DiffStatsFormat::FULL, 80)?
-        .as_str()
-        .unwrap_or("")
-        .to_string();
-    let diff_output = format_diff(&diff, syntax_set)?;
+    let mut diff_stats = String::new();
 
-    Ok((diff_plain.freeze(), diff_output, diff_stats))
+    let total_changes = insertions + deletions;
+
+    for (file, diff) in &diffs {
+        let local_changes = diff.insertions + diff.deletions;
+        let width = WIDTH.min(local_changes);
+
+        // Calculate proportions of `+` and `-` within the total width
+        let addition_width = (width * diff.insertions) / total_changes;
+        let deletion_width = (width * diff.deletions) / total_changes;
+
+        // Handle edge case where total width is less than total changes
+        let remaining_width = width - (addition_width + deletion_width);
+        let adjusted_addition_width = addition_width + remaining_width.min(diff.insertions);
+        let adjusted_deletion_width =
+            deletion_width + (remaining_width - remaining_width.min(diff.insertions));
+
+        // Generate the string representation
+        let plus_str = "+".repeat(adjusted_addition_width);
+        let minus_str = "-".repeat(adjusted_deletion_width);
+
+        writeln!(diff_stats, " {file:max_file_name_length$} | {local_changes:max_change_length$} {plus_str}{minus_str}").unwrap();
+    }
+
+    for (i, (singular_desc, plural_desc, amount)) in [
+        ("file changed", "files changed", files_changed),
+        ("insertion(+)", "insertions(+)", insertions),
+        ("deletion(-)", "deletions(-)", deletions),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if amount == 0 {
+            continue;
+        }
+
+        let prefix = if i == 0 { "" } else { "," };
+
+        let desc = if amount == 1 {
+            singular_desc
+        } else {
+            plural_desc
+        };
+
+        write!(diff_stats, "{prefix} {amount} {desc}")?;
+    }
+
+    // TODO: emit 'create mode 100644 pure-black-background-f82588d3.jpg' here
+
+    writeln!(diff_stats)?;
+
+    Ok((diff_output, diff_stats))
+}
+
+#[derive(Default, Debug)]
+struct FileDiff {
+    insertions: usize,
+    deletions: usize,
 }
 
 fn format_file(content: &str, extension: &str, syntax_set: &SyntaxSet) -> Result<String> {
@@ -834,48 +1013,256 @@ impl<'a> fmt::Display for Escape<'a> {
     }
 }
 
-#[instrument(skip(diff, syntax_set))]
-fn format_diff(diff: &git2::Diff<'_>, syntax_set: &SyntaxSet) -> Result<String> {
-    let mut diff_output = String::new();
+trait DiffFormatter {
+    fn file_header(&self, output: &mut String, data: fmt::Arguments<'_>);
 
-    diff.print(DiffFormat::Patch, |delta, _diff_hunk, diff_line| {
-        let (class, should_highlight_as_source) = match diff_line.origin_value() {
-            DiffLineType::Addition => (Some("add-line"), true),
-            DiffLineType::Deletion => (Some("remove-line"), true),
-            DiffLineType::Context => (Some("context"), true),
-            DiffLineType::AddEOFNL => (Some("remove-line"), false),
-            DiffLineType::DeleteEOFNL => (Some("add-line"), false),
-            DiffLineType::FileHeader => (Some("file-header"), false),
-            _ => (None, false),
-        };
+    fn binary(
+        &self,
+        output: &mut String,
+        left: &str,
+        right: &str,
+        left_content: &[u8],
+        right_content: &[u8],
+    );
+}
 
-        let line = String::from_utf8_lossy(diff_line.content());
+struct DiffBuilder<'a, F> {
+    output: &'a mut String,
+    resource_cache: &'a mut gix::diff::blob::Platform,
+    diffs: &'a mut BTreeMap<String, FileDiff>,
+    formatter: F,
+}
 
-        let extension = if should_highlight_as_source {
-            if let Some(path) = delta.new_file().path() {
-                path.extension()
-                    .or_else(|| path.file_name())
-                    .map_or_else(|| Cow::Borrowed(""), OsStr::to_string_lossy)
-            } else {
-                Cow::Borrowed("")
-            }
+impl<'a, F: DiffFormatter + Callback> DiffBuilder<'a, F> {
+    fn handle(
+        &mut self,
+        change: gix::object::tree::diff::Change<'_, '_, '_>,
+    ) -> Result<gix::object::tree::diff::Action> {
+        if !change.event.entry_mode().is_blob_or_symlink() {
+            return Ok(gix::object::tree::diff::Action::Continue);
+        }
+
+        let diff = self.diffs.entry(change.location.to_string()).or_default();
+        let change = change.diff(self.resource_cache)?;
+
+        let prep = change.resource_cache.prepare_diff()?;
+
+        self.formatter.file_header(
+            self.output,
+            format_args!(
+                "diff --git a/{} b/{}",
+                prep.old.rela_path, prep.new.rela_path
+            ),
+        );
+
+        if prep.old.id.is_null() {
+            self.formatter.file_header(
+                self.output,
+                format_args!("new file mode {}", prep.new.mode.as_octal_str()),
+            );
+        } else if prep.new.id.is_null() {
+            self.formatter.file_header(
+                self.output,
+                format_args!("deleted file mode {}", prep.old.mode.as_octal_str()),
+            );
+        } else if prep.new.mode != prep.old.mode {
+            self.formatter.file_header(
+                self.output,
+                format_args!("old mode {}", prep.old.mode.as_octal_str()),
+            );
+            self.formatter.file_header(
+                self.output,
+                format_args!("new mode {}", prep.new.mode.as_octal_str()),
+            );
+        }
+
+        // copy from
+        // copy to
+        // rename old
+        // rename new
+        // rename from
+        // rename to
+        // similarity index
+        // dissimilarity index
+
+        let (index_suffix_sep, index_suffix) = if prep.old.mode == prep.new.mode {
+            (" ", prep.new.mode.as_octal_str())
         } else {
-            Cow::Borrowed("patch")
+            ("", BStr::new(&[]))
         };
 
-        if let Some(class) = class {
-            let _ = write!(diff_output, r#"<span class="diff-{class}">"#);
+        let old_path = if prep.old.id.is_null() {
+            Cow::Borrowed("/dev/null")
+        } else {
+            Cow::Owned(format!("a/{}", prep.old.rela_path))
+        };
+
+        let new_path = if prep.new.id.is_null() {
+            Cow::Borrowed("/dev/null")
+        } else {
+            Cow::Owned(format!("a/{}", prep.new.rela_path))
+        };
+
+        match prep.operation {
+            Operation::InternalDiff { algorithm } => {
+                self.formatter.file_header(
+                    self.output,
+                    format_args!(
+                        "index {}..{}{index_suffix_sep}{index_suffix}",
+                        prep.old.id.to_hex_with_len(7),
+                        prep.new.id.to_hex_with_len(7)
+                    ),
+                );
+                self.formatter
+                    .file_header(self.output, format_args!("--- {old_path}"));
+                self.formatter
+                    .file_header(self.output, format_args!("+++ {new_path}"));
+
+                let old_source = gix::diff::blob::sources::lines_with_terminator(
+                    std::str::from_utf8(prep.old.data.as_slice().unwrap_or_default())?,
+                );
+                let new_source = gix::diff::blob::sources::lines_with_terminator(
+                    std::str::from_utf8(prep.new.data.as_slice().unwrap_or_default())?,
+                );
+                let input = gix::diff::blob::intern::InternedInput::new(old_source, new_source);
+
+                let output = gix::diff::blob::diff(
+                    algorithm,
+                    &input,
+                    UnifiedDiffBuilder::with_writer(&input, &mut *self.output, &mut self.formatter)
+                        .with_counter(),
+                );
+
+                diff.deletions += output.removals as usize;
+                diff.insertions += output.insertions as usize;
+            }
+            Operation::ExternalCommand { .. } => {}
+            Operation::SourceOrDestinationIsBinary => {
+                self.formatter.file_header(
+                    self.output,
+                    format_args!(
+                        "index {}..{}{index_suffix_sep}{index_suffix}",
+                        prep.old.id, prep.new.id,
+                    ),
+                );
+
+                self.formatter.binary(
+                    self.output,
+                    old_path.as_ref(),
+                    new_path.as_ref(),
+                    prep.old.data.as_slice().unwrap_or_default(),
+                    prep.new.data.as_slice().unwrap_or_default(),
+                );
+            }
         }
 
-        let _res = format_file_inner(&mut diff_output, &line, &extension, syntax_set, false);
+        self.resource_cache.clear_resource_cache_keep_allocation();
+        Ok(gix::object::tree::diff::Action::Continue)
+    }
+}
 
-        if class.is_some() {
-            diff_output.push_str("</span>");
+struct PlainDiffFormatter;
+
+impl DiffFormatter for PlainDiffFormatter {
+    fn file_header(&self, output: &mut String, data: fmt::Arguments<'_>) {
+        writeln!(output, "{data}").unwrap();
+    }
+
+    fn binary(
+        &self,
+        output: &mut String,
+        left: &str,
+        right: &str,
+        _left_content: &[u8],
+        _right_content: &[u8],
+    ) {
+        // todo: actually perform the diff and write a `GIT binary patch` out
+        writeln!(output, "Binary files {left} and {right} differ").unwrap();
+    }
+}
+
+impl Callback for PlainDiffFormatter {
+    fn addition(&mut self, data: &str, dst: &mut String) {
+        write!(dst, "+{data}").unwrap();
+    }
+
+    fn remove(&mut self, data: &str, dst: &mut String) {
+        write!(dst, "-{data}").unwrap();
+    }
+
+    fn context(&mut self, data: &str, dst: &mut String) {
+        write!(dst, " {data}").unwrap();
+    }
+}
+
+struct SyntaxHighlightedDiffFormatter<'a> {
+    syntax_set: &'a SyntaxSet,
+    extension: Cow<'a, str>,
+}
+
+impl<'a> SyntaxHighlightedDiffFormatter<'a> {
+    fn new(path: &'a Path, syntax_set: &'a SyntaxSet) -> Self {
+        let extension = path
+            .extension()
+            .or_else(|| path.file_name())
+            .map_or_else(|| Cow::Borrowed(""), OsStr::to_string_lossy);
+
+        Self {
+            syntax_set,
+            extension,
         }
+    }
 
-        true
-    })
-    .context("Failed to prepare diff")?;
+    fn write(&self, output: &mut String, class: &str, data: &str) {
+        write!(output, r#"<span class="diff-{class}">"#).unwrap();
+        format_file_inner(
+            output,
+            data,
+            self.extension.as_ref(),
+            self.syntax_set,
+            false,
+        )
+        .unwrap();
+        write!(output, r#"</span>"#).unwrap();
+    }
+}
 
-    Ok(diff_output)
+impl<'a> DiffFormatter for SyntaxHighlightedDiffFormatter<'a> {
+    fn file_header(&self, output: &mut String, data: Arguments<'_>) {
+        write!(output, r#"<span class="diff-file-header">"#).unwrap();
+        format_file_inner(output, &data.to_string(), "patch", self.syntax_set, false).unwrap();
+        writeln!(output, r#"</span>"#).unwrap();
+    }
+
+    fn binary(
+        &self,
+        output: &mut String,
+        left: &str,
+        right: &str,
+        _left_content: &[u8],
+        _right_content: &[u8],
+    ) {
+        format_file_inner(
+            output,
+            &format!("Binary files {left} and {right} differ"),
+            "patch",
+            self.syntax_set,
+            false,
+        )
+        .unwrap();
+    }
+}
+
+impl<'a> Callback for SyntaxHighlightedDiffFormatter<'a> {
+    fn addition(&mut self, data: &str, dst: &mut String) {
+        self.write(dst, "add-line", data);
+    }
+
+    fn remove(&mut self, data: &str, dst: &mut String) {
+        self.write(dst, "remote-line", data);
+    }
+
+    fn context(&mut self, data: &str, dst: &mut String) {
+        self.write(dst, "context", data);
+    }
 }

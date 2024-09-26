@@ -1,7 +1,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use anyhow::Context;
-use git2::Signature;
+use gix::actor::SignatureRef;
 use serde::{Deserialize, Serialize};
 use yoke::{Yoke, Yokeable};
 
@@ -16,10 +16,10 @@ pub struct Tag<'a> {
 }
 
 impl<'a> Tag<'a> {
-    pub fn new(tagger: Option<&'a Signature<'_>>) -> Self {
-        Self {
-            tagger: tagger.map(Into::into),
-        }
+    pub fn new(tagger: Option<SignatureRef<'a>>) -> Result<Self, anyhow::Error> {
+        Ok(Self {
+            tagger: tagger.map(TryFrom::try_from).transpose()?,
+        })
     }
 
     pub fn insert(&self, batch: &TagTree, name: &str) -> Result<(), anyhow::Error> {

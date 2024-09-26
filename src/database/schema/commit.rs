@@ -1,10 +1,12 @@
 use std::{borrow::Cow, ops::Deref, sync::Arc};
 
 use anyhow::Context;
-use git2::{Oid, Signature};
+use gix::actor::SignatureRef;
+use gix::bstr::ByteSlice;
+use gix::ObjectId;
 use rocksdb::{IteratorMode, ReadOptions, WriteBatch};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use time::OffsetDateTime;
+use time::{OffsetDateTime, UtcOffset};
 use tracing::debug;
 use yoke::{Yoke, Yokeable};
 
@@ -27,21 +29,21 @@ pub struct Commit<'a> {
 
 impl<'a> Commit<'a> {
     pub fn new(
-        commit: &'a git2::Commit<'_>,
-        author: &'a git2::Signature<'_>,
-        committer: &'a git2::Signature<'_>,
-    ) -> Self {
-        Self {
-            summary: commit
-                .summary_bytes()
-                .map_or(Cow::Borrowed(""), String::from_utf8_lossy),
-            message: commit
-                .body_bytes()
-                .map_or(Cow::Borrowed(""), String::from_utf8_lossy),
-            committer: committer.into(),
-            author: author.into(),
-            hash: CommitHash::Oid(commit.id()),
-        }
+        commit: &gix::Commit<'_>,
+        author: SignatureRef<'a>,
+        committer: SignatureRef<'a>,
+    ) -> Result<Self, anyhow::Error> {
+        let message = commit.message()?;
+
+        Ok(Self {
+            summary: message.summary().to_string().into(),
+            message: message
+                .body
+                .map_or(Cow::Borrowed(""), |v| v.to_string().into()),
+            committer: committer.try_into()?,
+            author: author.try_into()?,
+            hash: CommitHash::Oid(commit.id().detach()),
+        })
     }
 
     pub fn insert(&self, tree: &CommitTree, id: u64, tx: &mut WriteBatch) -> anyhow::Result<()> {
@@ -51,7 +53,7 @@ impl<'a> Commit<'a> {
 
 #[derive(Debug)]
 pub enum CommitHash<'a> {
-    Oid(Oid),
+    Oid(ObjectId),
     Bytes(&'a [u8]),
 }
 
@@ -97,14 +99,16 @@ pub struct Author<'a> {
     pub time: OffsetDateTime,
 }
 
-impl<'a> From<&'a git2::Signature<'_>> for Author<'a> {
-    fn from(author: &'a Signature<'_>) -> Self {
-        Self {
-            name: String::from_utf8_lossy(author.name_bytes()),
-            email: String::from_utf8_lossy(author.email_bytes()),
-            // TODO: this needs to deal with offset
-            time: OffsetDateTime::from_unix_timestamp(author.when().seconds()).unwrap(),
-        }
+impl<'a> TryFrom<SignatureRef<'a>> for Author<'a> {
+    type Error = anyhow::Error;
+
+    fn try_from(author: SignatureRef<'a>) -> Result<Self, anyhow::Error> {
+        Ok(Self {
+            name: author.name.to_str_lossy(),
+            email: author.email.to_str_lossy(),
+            time: OffsetDateTime::from_unix_timestamp(author.time.seconds)?
+                .to_offset(UtcOffset::from_whole_seconds(author.time.offset)?),
+        })
     }
 }
 

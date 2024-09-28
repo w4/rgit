@@ -3,6 +3,7 @@ use std::{
     collections::{BTreeMap, VecDeque},
     ffi::OsStr,
     fmt::{self, Arguments, Write},
+    io::ErrorKind,
     path::{Path, PathBuf},
     str::FromStr,
     sync::Arc,
@@ -43,6 +44,7 @@ type ReadmeCacheKey = (PathBuf, Option<Arc<str>>);
 pub struct Git {
     commits: Cache<(ObjectId, bool), Arc<Commit>>,
     readme_cache: Cache<ReadmeCacheKey, Option<(ReadmeFormat, Arc<str>)>>,
+    open_repositories: Cache<PathBuf, ThreadSafeRepository>,
     syntax_set: SyntaxSet,
 }
 
@@ -51,11 +53,15 @@ impl Git {
     pub fn new(syntax_set: SyntaxSet) -> Self {
         Self {
             commits: Cache::builder()
-                .time_to_live(Duration::from_secs(10))
+                .time_to_live(Duration::from_secs(30))
                 .max_capacity(100)
                 .build(),
             readme_cache: Cache::builder()
-                .time_to_live(Duration::from_secs(10))
+                .time_to_live(Duration::from_secs(30))
+                .max_capacity(100)
+                .build(),
+            open_repositories: Cache::builder()
+                .time_to_idle(Duration::from_secs(120))
                 .max_capacity(100)
                 .build(),
             syntax_set,
@@ -70,20 +76,24 @@ impl Git {
         repo_path: PathBuf,
         branch: Option<Arc<str>>,
     ) -> Result<Arc<OpenRepository>> {
-        let repo = tokio::task::spawn_blocking({
-            let repo_path = repo_path.clone();
-            move || {
-                gix::open::Options::isolated()
-                    .open_path_as_is(true)
-                    .open(&repo_path)
-            }
-        })
-        .await
-        .context("Failed to join Tokio task")?
-        .map_err(|err| {
-            error!("{}", err);
-            anyhow!("Failed to open repository")
-        })?;
+        let repo = repo_path.clone();
+        let repo = self
+            .open_repositories
+            .try_get_with_by_ref(&repo_path, async move {
+                tokio::task::spawn_blocking(move || {
+                    gix::open::Options::isolated()
+                        .open_path_as_is(true)
+                        .open(&repo)
+                })
+                .await
+                .context("Failed to join Tokio task")
+                .map_err(|e| std::io::Error::new(ErrorKind::Other, e))?
+                .map_err(|err| {
+                    error!("{}", err);
+                    std::io::Error::new(ErrorKind::Other, "Failed to open repository")
+                })
+            })
+            .await?;
 
         Ok(Arc::new(OpenRepository {
             git: self,

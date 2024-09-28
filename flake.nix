@@ -20,6 +20,7 @@
           inherit src;
           strictDeps = true;
           buildInputs = pkgs.lib.optionals pkgs.stdenv.isDarwin [ pkgs.libiconv ];
+          nativeBuildInputs = [ pkgs.cmake ];
           LIBCLANG_PATH = "${pkgs.clang.cc.lib}/lib";
           ROCKSDB_LIB_DIR = "${pkgs.rocksdb}/lib";
         };
@@ -94,6 +95,11 @@
                 default = "10s";
                 description = "Timeout for incoming HTTP requests";
                 type = types.str;
+              };
+              pkg = mkOption {
+                default = rgit;
+                description = "rgit package to use";
+                type = types.package;
               };
             };
 

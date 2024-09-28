@@ -9,6 +9,7 @@ license = "WTFPL"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+arc-swap = "1.7"
 anyhow = "1.0"
 askama = "0.12.0"
 axum = { version = "0.7", features = ["macros"] }
@@ -23,9 +24,9 @@ const-hex = "1.12"
 const_format = "0.2"
 comrak = "0.28.0"
 console-subscriber = { version = "0.4", features = ["parking_lot"] }
-flate2 = "1.0"
+flate2 = { version = "1.0", default-features = false, features = ["zlib-ng"] }
 futures = "0.3"
-gix = "0.66"
+gix = { version = "0.66", features = ["fast-sha1", "zlib-ng"] }
 httparse = "1.7"
 humantime = "2.1"
 itertools = "0.13.0"

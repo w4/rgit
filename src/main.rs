@@ -328,8 +328,8 @@ async fn run_indexer(
 
 #[must_use]
 pub fn build_asset_hash(v: &[u8]) -> Box<str> {
-    let hasher = xxhash_rust::const_xxh3::xxh3_128(v);
-    let out = const_hex::encode(&hasher.to_be_bytes());
+    let hasher = const_xxh3::xxh3_128(v);
+    let out = const_hex::encode(hasher.to_be_bytes());
     Box::from(out)
 }
 

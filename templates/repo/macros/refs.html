@@ -14,7 +14,7 @@
         <td><a href="/{{ repo.display() }}/log/?h={{ name }}">{{ name }}</a></td>
         <td><a href="/{{ repo.display() }}/commit/?id={{ commit.get().hash|hex }}">{{ commit.get().summary }}</a></td>
         <td>
-            <img src="https://www.gravatar.com/avatar/{{ commit.get().author.email|md5 }}?s=13&d=retro" width="13" height="13">
+            <img src="{{ commit.get().author.email|gravatar }}" width="13" height="13">
             {{ commit.get().author.name }}
         </td>
         <td>
@@ -44,7 +44,7 @@
         <td><a href="/{{ repo.display() }}/snapshot?h={{ name }}">{{- name -}}.tar.gz</a></td>
         <td>
             {% if let Some(tagger) = tag.get().tagger -%}
-            <img src="https://www.gravatar.com/avatar/{{ tagger.email|md5 }}?s=13&d=retro" width="13" height="13">
+            <img src="{{ tagger.email|gravatar }}" width="13" height="13">
             {{ tagger.name }}
             {%- endif %}
         </td>
@@ -80,7 +80,7 @@
         </td>
         <td><a href="/{{ repo.display() }}/commit/?id={{ commit.hash|hex }}">{{ commit.summary }}</a></td>
         <td>
-            <img src="https://www.gravatar.com/avatar/{{ commit.author.email|md5 }}?s=13&d=retro" width="13" height="13">
+            <img src="{{ commit.author.email|gravatar }}?s=13&d=retro" width="13" height="13">
             {{ commit.author.name }}
         </td>
     </tr>

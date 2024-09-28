@@ -1,8 +1,13 @@
 // sorry clippy, we don't have a choice. askama forces this on us
 #![allow(clippy::unnecessary_wraps, clippy::trivially_copy_pass_by_ref)]
 
-use std::borrow::Borrow;
+use std::{
+    borrow::Borrow,
+    collections::HashMap,
+    sync::{Arc, LazyLock},
+};
 
+use arc_swap::ArcSwap;
 use time::format_description::well_known::Rfc3339;
 
 pub fn format_time(s: impl Borrow<time::OffsetDateTime>) -> Result<String, askama::Error> {
@@ -25,8 +30,28 @@ pub fn hex(s: &[u8]) -> Result<String, askama::Error> {
     Ok(const_hex::encode(s))
 }
 
-pub fn md5(s: &str) -> Result<String, askama::Error> {
-    Ok(const_hex::encode(md5::compute(s).0))
+pub fn gravatar(email: &str) -> Result<&'static str, askama::Error> {
+    static CACHE: LazyLock<ArcSwap<HashMap<&'static str, &'static str>>> =
+        LazyLock::new(|| ArcSwap::new(Arc::new(HashMap::new())));
+
+    if let Some(res) = CACHE.load().get(email).copied() {
+        return Ok(res);
+    }
+
+    let url = format!(
+        "https://www.gravatar.com/avatar/{}",
+        const_hex::encode(md5::compute(email).0)
+    );
+    let key = Box::leak(Box::from(email));
+    let url = url.leak();
+
+    CACHE.rcu(|curr| {
+        let mut r = (**curr).clone();
+        r.insert(key, url);
+        r
+    });
+
+    Ok(url)
 }
 
 #[allow(dead_code)]

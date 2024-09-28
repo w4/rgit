@@ -1,9 +1,7 @@
 use std::{borrow::Cow, ops::Deref, sync::Arc};
 
 use anyhow::Context;
-use gix::actor::SignatureRef;
-use gix::bstr::ByteSlice;
-use gix::ObjectId;
+use gix::{actor::SignatureRef, bstr::ByteSlice, ObjectId};
 use rocksdb::{IteratorMode, ReadOptions, WriteBatch};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use time::{OffsetDateTime, UtcOffset};

@@ -1,11 +1,12 @@
 //! Heavily based on [`gix::diff::blob::UnifiedDiffBuilder`] but provides
 //! a callback that can be used for styling the diffs.
 
-use std::fmt::Write;
-use std::ops::Range;
+use std::{fmt::Write, ops::Range};
 
-use gix::diff::blob::intern::{InternedInput, Interner, Token};
-use gix::diff::blob::Sink;
+use gix::diff::blob::{
+    intern::{InternedInput, Interner, Token},
+    Sink,
+};
 
 pub(crate) trait Callback {
     fn addition(&mut self, data: &str, dst: &mut String);

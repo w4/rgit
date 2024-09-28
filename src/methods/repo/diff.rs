@@ -1,4 +1,15 @@
-use std::sync::Arc;
+use std::{fmt::Write, sync::Arc};
+
+use askama::Template;
+use axum::{
+    extract::Query,
+    http::HeaderValue,
+    response::{IntoResponse, Response},
+    Extension,
+};
+use bytes::{BufMut, BytesMut};
+use clap::crate_version;
+use time::format_description::well_known::Rfc2822;
 
 use crate::{
     git::Commit,
@@ -9,17 +20,6 @@ use crate::{
     },
     Git,
 };
-use askama::Template;
-use axum::{
-    extract::Query,
-    http::HeaderValue,
-    response::{IntoResponse, Response},
-    Extension,
-};
-use bytes::{BufMut, BytesMut};
-use clap::crate_version;
-use std::fmt::Write;
-use time::format_description::well_known::Rfc2822;
 
 #[derive(Template)]
 #[template(path = "repo/diff.html")]

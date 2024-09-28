@@ -8,9 +8,7 @@ use std::{
 };
 
 use anyhow::Context;
-use gix::bstr::ByteSlice;
-use gix::refs::Category;
-use gix::Reference;
+use gix::{bstr::ByteSlice, refs::Category, Reference};
 use ini::Ini;
 use itertools::Itertools;
 use rocksdb::WriteBatch;

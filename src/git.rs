@@ -1,7 +1,17 @@
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, VecDeque},
+    ffi::OsStr,
+    fmt::{self, Arguments, Write},
+    path::{Path, PathBuf},
+    str::FromStr,
+    sync::Arc,
+    time::Duration,
+};
+
 use anyhow::{anyhow, Context, Result};
 use axum::response::IntoResponse;
-use bytes::buf::Writer;
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::{buf::Writer, BufMut, Bytes, BytesMut};
 use comrak::{ComrakPlugins, Options};
 use flate2::write::GzEncoder;
 use gix::{
@@ -16,19 +26,8 @@ use gix::{
 };
 use moka::future::Cache;
 use parking_lot::Mutex;
-use std::{
-    borrow::Cow,
-    collections::{BTreeMap, VecDeque},
-    ffi::OsStr,
-    fmt::{self, Arguments, Write},
-    path::{Path, PathBuf},
-    str::FromStr,
-    sync::Arc,
-    time::Duration,
-};
 use syntect::{
-    parsing::SyntaxSet,
-    parsing::{BasicScopeStackOp, ParseState, Scope, ScopeStack, SCOPE_REPO},
+    parsing::{BasicScopeStackOp, ParseState, Scope, ScopeStack, SyntaxSet, SCOPE_REPO},
     util::LinesWithEndings,
 };
 use tar::Builder;

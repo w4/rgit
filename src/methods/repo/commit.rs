@@ -5,7 +5,7 @@ use axum::{extract::Query, response::IntoResponse, Extension};
 use serde::Deserialize;
 
 use crate::{
-    git::Commit,
+    git::{Commit, OpenRepository},
     into_response,
     methods::{
         filters,
@@ -39,25 +39,10 @@ pub async fn handle(
 ) -> Result<impl IntoResponse> {
     let open_repo = git.repo(repository_path, query.branch.clone()).await?;
 
-    let dl_branch = if let Some(branch) = query.branch.clone() {
-        branch
-    } else {
-        Arc::from(
-            open_repo
-                .clone()
-                .default_branch()
-                .await
-                .ok()
-                .flatten()
-                .unwrap_or_else(|| "master".to_string()),
-        )
-    };
-
-    let commit = if let Some(commit) = query.id.as_deref() {
-        open_repo.commit(commit, true).await?
-    } else {
-        Arc::new(open_repo.latest_commit(true).await?)
-    };
+    let (dl_branch, commit) = tokio::try_join!(
+        fetch_dl_branch(query.branch.clone(), open_repo.clone()),
+        fetch_commit(query.id.as_deref(), open_repo),
+    )?;
 
     Ok(into_response(View {
         repo,
@@ -66,4 +51,32 @@ pub async fn handle(
         id: query.id,
         dl_branch,
     }))
+}
+
+async fn fetch_commit(
+    commit_id: Option<&str>,
+    open_repo: Arc<OpenRepository>,
+) -> Result<Arc<Commit>> {
+    Ok(if let Some(commit) = commit_id {
+        open_repo.commit(commit, true).await?
+    } else {
+        Arc::new(open_repo.latest_commit(true).await?)
+    })
+}
+
+async fn fetch_dl_branch(
+    branch: Option<Arc<str>>,
+    open_repo: Arc<OpenRepository>,
+) -> Result<Arc<str>> {
+    if let Some(branch) = branch.clone() {
+        Ok(branch)
+    } else {
+        Ok(Arc::from(
+            open_repo
+                .clone()
+                .default_branch()
+                .await?
+                .unwrap_or_else(|| "master".to_string()),
+        ))
+    }
 }

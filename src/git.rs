@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, VecDeque},
+    collections::VecDeque,
     ffi::OsStr,
     fmt::{self, Arguments, Write},
     io::ErrorKind,
@@ -157,15 +157,17 @@ impl OpenRepository {
                             .or_else(|| path.file_name())
                             .map_or_else(|| Cow::Borrowed(""), OsStr::to_string_lossy);
 
-                        let content = match (formatted, String::from_utf8(blob.take_data())) {
+                        let content = match (formatted, simdutf8::basic::from_utf8(&blob.data)) {
                             (true, Err(_)) => Content::Binary(vec![]),
                             (true, Ok(data)) => Content::Text(Cow::Owned(format_file(
-                                &data,
+                                data,
                                 &extension,
                                 &self.git.syntax_set,
                             )?)),
-                            (false, Err(e)) => Content::Binary(e.into_bytes()),
-                            (false, Ok(data)) => Content::Text(Cow::Owned(data)),
+                            (false, Err(_)) => Content::Binary(blob.take_data()),
+                            (false, Ok(_data)) => Content::Text(Cow::Owned(unsafe {
+                                String::from_utf8_unchecked(blob.take_data())
+                            })),
                         };
 
                         return Ok(PathDestination::File(FileWithContent {
@@ -295,7 +297,7 @@ impl OpenRepository {
                             continue;
                         };
 
-                        let Ok(content) = std::str::from_utf8(&blob.data) else {
+                        let Ok(content) = simdutf8::basic::from_utf8(&blob.data) else {
                             continue;
                         };
 
@@ -757,7 +759,7 @@ fn fetch_diff_and_stats(
         .transpose()?
         .unwrap_or_else(|| repo.empty_tree());
 
-    let mut diffs = BTreeMap::<_, FileDiff>::new();
+    let mut diffs = Vec::new();
     let mut diff_output = String::new();
 
     let mut resource_cache = repo.diff_resource_cache_for_tree_diff()?;
@@ -795,9 +797,9 @@ fn fetch_diff_and_stats(
         diffs.iter().fold(
             (0, 0, 0, 0, 0),
             |(max_file_name_length, max_change_length, files_changed, insertions, deletions),
-             (f, stats)| {
+             stats| {
                 (
-                    max_file_name_length.max(f.len()),
+                    max_file_name_length.max(stats.path.len()),
                     max_change_length
                         .max(((stats.insertions + stats.deletions).ilog10() + 1) as usize),
                     files_changed + 1,
@@ -811,7 +813,7 @@ fn fetch_diff_and_stats(
 
     let total_changes = insertions + deletions;
 
-    for (file, diff) in &diffs {
+    for diff in &diffs {
         let local_changes = diff.insertions + diff.deletions;
         let width = WIDTH.min(local_changes);
 
@@ -829,6 +831,7 @@ fn fetch_diff_and_stats(
         let plus_str = "+".repeat(adjusted_addition_width);
         let minus_str = "-".repeat(adjusted_deletion_width);
 
+        let file = diff.path.as_str();
         writeln!(diff_stats, " {file:max_file_name_length$} | {local_changes:max_change_length$} {plus_str}{minus_str}").unwrap();
     }
 
@@ -864,6 +867,7 @@ fn fetch_diff_and_stats(
 
 #[derive(Default, Debug)]
 struct FileDiff {
+    path: String,
     insertions: usize,
     deletions: usize,
 }
@@ -1039,11 +1043,12 @@ trait DiffFormatter {
 struct DiffBuilder<'a, F> {
     output: &'a mut String,
     resource_cache: &'a mut gix::diff::blob::Platform,
-    diffs: &'a mut BTreeMap<String, FileDiff>,
+    diffs: &'a mut Vec<FileDiff>,
     formatter: F,
 }
 
 impl<'a, F: DiffFormatter + Callback> DiffBuilder<'a, F> {
+    #[allow(clippy::too_many_lines)]
     fn handle(
         &mut self,
         change: gix::object::tree::diff::Change<'_, '_, '_>,
@@ -1052,7 +1057,11 @@ impl<'a, F: DiffFormatter + Callback> DiffBuilder<'a, F> {
             return Ok(gix::object::tree::diff::Action::Continue);
         }
 
-        let diff = self.diffs.entry(change.location.to_string()).or_default();
+        let mut diff = FileDiff {
+            path: change.location.to_string(),
+            insertions: 0,
+            deletions: 0,
+        };
         let change = change.diff(self.resource_cache)?;
 
         let prep = change.resource_cache.prepare_diff()?;
@@ -1129,10 +1138,10 @@ impl<'a, F: DiffFormatter + Callback> DiffBuilder<'a, F> {
                     .file_header(self.output, format_args!("+++ {new_path}"));
 
                 let old_source = gix::diff::blob::sources::lines_with_terminator(
-                    std::str::from_utf8(prep.old.data.as_slice().unwrap_or_default())?,
+                    simdutf8::basic::from_utf8(prep.old.data.as_slice().unwrap_or_default())?,
                 );
                 let new_source = gix::diff::blob::sources::lines_with_terminator(
-                    std::str::from_utf8(prep.new.data.as_slice().unwrap_or_default())?,
+                    simdutf8::basic::from_utf8(prep.new.data.as_slice().unwrap_or_default())?,
                 );
                 let input = gix::diff::blob::intern::InternedInput::new(old_source, new_source);
 
@@ -1165,6 +1174,8 @@ impl<'a, F: DiffFormatter + Callback> DiffBuilder<'a, F> {
                 );
             }
         }
+
+        self.diffs.push(diff);
 
         self.resource_cache.clear_resource_cache_keep_allocation();
         Ok(gix::object::tree::diff::Action::Continue)

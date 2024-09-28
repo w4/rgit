@@ -7,7 +7,7 @@ use std::{
     net::SocketAddr,
     path::PathBuf,
     str::FromStr,
-    sync::{Arc, LazyLock, OnceLock},
+    sync::{Arc, OnceLock},
     time::Duration,
 };
 
@@ -23,9 +23,9 @@ use axum::{
 };
 use bat::assets::HighlightingAssets;
 use clap::Parser;
+use const_format::formatcp;
 use database::schema::SCHEMA_VERSION;
 use rocksdb::{Options, SliceTransform};
-use sha2::{digest::FixedOutput, Digest};
 use syntect::html::ClassStyle;
 use tokio::{
     net::TcpListener,
@@ -36,6 +36,7 @@ use tower_http::{cors::CorsLayer, timeout::TimeoutLayer};
 use tower_layer::layer_fn;
 use tracing::{error, info, instrument, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use xxhash_rust::const_xxh3;
 
 use crate::{
     database::schema::prefixes::{
@@ -54,8 +55,10 @@ mod unified_diff_builder;
 
 const CRATE_VERSION: &str = clap::crate_version!();
 
-static GLOBAL_CSS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/statics/css/style.css",));
-static GLOBAL_CSS_HASH: LazyLock<Box<str>> = LazyLock::new(|| build_asset_hash(GLOBAL_CSS));
+const GLOBAL_CSS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/statics/css/style.css"));
+const GLOBAL_CSS_HASH: &str = const_hex::Buffer::<16, false>::new()
+    .const_format(&const_xxh3::xxh3_128(GLOBAL_CSS).to_be_bytes())
+    .as_str();
 
 static HIGHLIGHT_CSS_HASH: OnceLock<Box<str>> = OnceLock::new();
 static DARK_HIGHLIGHT_CSS_HASH: OnceLock<Box<str>> = OnceLock::new();
@@ -187,7 +190,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let app = Router::new()
         .route("/", get(methods::index::handle))
         .route(
-            &format!("/style-{}.css", *GLOBAL_CSS_HASH),
+            formatcp!("/style-{}.css", GLOBAL_CSS_HASH),
             get(static_css(GLOBAL_CSS)),
         )
         .route(
@@ -325,10 +328,8 @@ async fn run_indexer(
 
 #[must_use]
 pub fn build_asset_hash(v: &[u8]) -> Box<str> {
-    let mut hasher = sha2::Sha256::default();
-    hasher.update(v);
-    let mut out = hex::encode(hasher.finalize_fixed());
-    out.truncate(10);
+    let hasher = xxhash_rust::const_xxh3::xxh3_128(v);
+    let out = const_hex::encode(&hasher.to_be_bytes());
     Box::from(out)
 }
 

@@ -22,10 +22,9 @@ use gix::{
     objs::tree::EntryRef,
     prelude::TreeEntryRefExt,
     traverse::tree::visit::Action,
-    ObjectId,
+    ObjectId, ThreadSafeRepository,
 };
 use moka::future::Cache;
-use parking_lot::Mutex;
 use syntect::{
     parsing::{BasicScopeStackOp, ParseState, Scope, ScopeStack, SyntaxSet, SCOPE_REPO},
     util::LinesWithEndings,
@@ -71,9 +70,13 @@ impl Git {
         repo_path: PathBuf,
         branch: Option<Arc<str>>,
     ) -> Result<Arc<OpenRepository>> {
-        let mut repo = tokio::task::spawn_blocking({
+        let repo = tokio::task::spawn_blocking({
             let repo_path = repo_path.clone();
-            move || gix::open(repo_path)
+            move || {
+                gix::open::Options::isolated()
+                    .open_path_as_is(true)
+                    .open(&repo_path)
+            }
         })
         .await
         .context("Failed to join Tokio task")?
@@ -82,12 +85,10 @@ impl Git {
             anyhow!("Failed to open repository")
         })?;
 
-        repo.object_cache_size(10 * 1024 * 1024);
-
         Ok(Arc::new(OpenRepository {
             git: self,
             cache_key: repo_path,
-            repo: Mutex::new(repo),
+            repo,
             branch,
         }))
     }
@@ -96,7 +97,7 @@ impl Git {
 pub struct OpenRepository {
     git: Arc<Git>,
     cache_key: PathBuf,
-    repo: Mutex<gix::Repository>,
+    repo: ThreadSafeRepository,
     branch: Option<Arc<str>>,
 }
 
@@ -113,7 +114,7 @@ impl OpenRepository {
             .context("Failed to parse tree hash")?;
 
         tokio::task::spawn_blocking(move || {
-            let repo = self.repo.lock();
+            let repo = self.repo.to_thread_local();
 
             let mut tree = if let Some(tree_id) = tree_id {
                 repo.find_tree(tree_id)
@@ -213,7 +214,7 @@ impl OpenRepository {
     pub async fn tag_info(self: Arc<Self>) -> Result<DetailedTag> {
         tokio::task::spawn_blocking(move || {
             let tag_name = self.branch.clone().context("no tag given")?;
-            let repo = self.repo.lock();
+            let repo = self.repo.to_thread_local();
 
             let tag = repo
                 .find_reference(&format!("refs/tags/{tag_name}"))
@@ -255,7 +256,7 @@ impl OpenRepository {
         git.readme_cache
             .try_get_with((self.cache_key.clone(), self.branch.clone()), async move {
                 tokio::task::spawn_blocking(move || {
-                    let repo = self.repo.lock();
+                    let repo = self.repo.to_thread_local();
 
                     let mut head = if let Some(reference) = &self.branch {
                         repo.find_reference(reference.as_ref())?
@@ -306,7 +307,7 @@ impl OpenRepository {
 
     pub async fn default_branch(self: Arc<Self>) -> Result<Option<String>> {
         tokio::task::spawn_blocking(move || {
-            let repo = self.repo.lock();
+            let repo = self.repo.to_thread_local();
             let head = repo.head().context("Couldn't find HEAD of repository")?;
             Ok(head.referent_name().map(|v| v.shorten().to_string()))
         })
@@ -317,7 +318,7 @@ impl OpenRepository {
     #[instrument(skip(self))]
     pub async fn latest_commit(self: Arc<Self>, highlighted: bool) -> Result<Commit> {
         tokio::task::spawn_blocking(move || {
-            let repo = self.repo.lock();
+            let repo = self.repo.to_thread_local();
 
             let mut head = if let Some(reference) = &self.branch {
                 repo.find_reference(reference.as_ref())?
@@ -354,7 +355,7 @@ impl OpenRepository {
             .context("failed to build oid")?;
 
         tokio::task::spawn_blocking(move || {
-            let repo = self.repo.lock();
+            let repo = self.repo.to_thread_local();
 
             let tree = if let Some(commit) = commit {
                 repo.find_commit(commit)?.tree()?
@@ -411,7 +412,7 @@ impl OpenRepository {
         git.commits
             .try_get_with((commit, highlighted), async move {
                 tokio::task::spawn_blocking(move || {
-                    let repo = self.repo.lock();
+                    let repo = self.repo.to_thread_local();
 
                     let commit = repo.find_commit(commit)?;
 

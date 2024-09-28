@@ -7,7 +7,7 @@ use std::{
     net::SocketAddr,
     path::PathBuf,
     str::FromStr,
-    sync::Arc,
+    sync::{Arc, LazyLock, OnceLock},
     time::Duration,
 };
 
@@ -24,8 +24,6 @@ use axum::{
 use bat::assets::HighlightingAssets;
 use clap::Parser;
 use database::schema::SCHEMA_VERSION;
-use nom::AsBytes;
-use once_cell::sync::{Lazy, OnceCell};
 use rocksdb::{Options, SliceTransform};
 use sha2::{digest::FixedOutput, Digest};
 use syntect::html::ClassStyle;
@@ -57,10 +55,10 @@ mod unified_diff_builder;
 const CRATE_VERSION: &str = clap::crate_version!();
 
 static GLOBAL_CSS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/statics/css/style.css",));
-static GLOBAL_CSS_HASH: Lazy<Box<str>> = Lazy::new(|| build_asset_hash(GLOBAL_CSS));
+static GLOBAL_CSS_HASH: LazyLock<Box<str>> = LazyLock::new(|| build_asset_hash(GLOBAL_CSS));
 
-static HIGHLIGHT_CSS_HASH: OnceCell<Box<str>> = OnceCell::new();
-static DARK_HIGHLIGHT_CSS_HASH: OnceCell<Box<str>> = OnceCell::new();
+static HIGHLIGHT_CSS_HASH: OnceLock<Box<str>> = OnceLock::new();
+static DARK_HIGHLIGHT_CSS_HASH: OnceLock<Box<str>> = OnceLock::new();
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
@@ -260,7 +258,7 @@ fn open_db(args: &Args) -> Result<Arc<rocksdb::DB>, anyhow::Error> {
         )?;
 
         let needs_schema_regen = match db.get("schema_version")? {
-            Some(v) if v.as_bytes() != SCHEMA_VERSION.as_bytes() => Some(Some(v)),
+            Some(v) if v.as_slice() != SCHEMA_VERSION.as_bytes() => Some(Some(v)),
             Some(_) => None,
             None => {
                 db.put("schema_version", SCHEMA_VERSION)?;

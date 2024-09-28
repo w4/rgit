@@ -20,7 +20,7 @@
           inherit src;
           strictDeps = true;
           buildInputs = pkgs.lib.optionals pkgs.stdenv.isDarwin [ pkgs.libiconv ];
-          nativeBuildInputs = [ pkgs.cmake ];
+          nativeBuildInputs = with pkgs; [ cmake clang ];
           LIBCLANG_PATH = "${pkgs.clang.cc.lib}/lib";
           ROCKSDB_LIB_DIR = "${pkgs.rocksdb}/lib";
         };

@@ -96,7 +96,7 @@
                 description = "Timeout for incoming HTTP requests";
                 type = types.str;
               };
-              pkg = mkOption {
+              package = mkOption {
                 default = rgit;
                 description = "rgit package to use";
                 type = types.package;
@@ -119,7 +119,7 @@
                 path = [ pkgs.git ];
                 serviceConfig = {
                   Type = "exec";
-                  ExecStart = "${self.packages.default."${system}"}/bin/rgit --request-timeout ${cfg.requestTimeout} --db-store ${cfg.dbStorePath} ${cfg.bindAddress} ${cfg.repositoryStorePath}";
+                  ExecStart = "${cfg.package}/bin/rgit --request-timeout ${cfg.requestTimeout} --db-store ${cfg.dbStorePath} ${cfg.bindAddress} ${cfg.repositoryStorePath}";
                   Restart = "on-failure";
 
                   User = "rgit";

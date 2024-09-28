@@ -1,7 +1,7 @@
-FROM rust:1.78-slim AS builder
+FROM rust:1.81-slim AS builder
 
 RUN rustup component add rustfmt
-RUN apt-get update && apt-get install -y libssl-dev pkg-config clang
+RUN apt-get update && apt-get install -y pkg-config clang cmake
 
 COPY . /sources
 WORKDIR /sources

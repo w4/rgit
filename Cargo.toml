@@ -17,14 +17,14 @@ bat = { version = "0.24.0", default-features = false, features = ["build-assets"
 bytes = "1.5"
 bincode = "1.3"
 console-subscriber = { version = "0.2", features = ["parking_lot"] }
-comrak = "0.21.0"
+comrak = "0.28.0"
 clap = { version = "4.4.10", features = ["cargo", "derive"] }
 futures = "0.3"
 gix = "0.66"
 hex = "0.4"
 humantime = "2.1"
-itertools = "0.12"
-rust-ini = "0.20"
+itertools = "0.13.0"
+rust-ini = "0.21.1"
 nom = "7.1"
 md5 = "0.7"
 moka = { version = "0.12.0", features = ["future"] }
@@ -42,10 +42,10 @@ timeago = { version = "0.4.2", default-features = false }
 tokio = { version = "1.19", features = ["full", "tracing"] }
 tokio-util = { version = "0.7.10", features = ["io"] }
 tokio-stream = "0.1"
-tower = "0.4"
+tower = "0.5"
 tower-service = "0.3"
 tower-layer = "0.3"
-tower-http = { version = "0.5", features = ["cors", "timeout"] }
+tower-http = { version = "0.6", features = ["cors", "timeout"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 unix_mode = "0.1"

@@ -21,12 +21,10 @@ use axum::{
     routing::get,
     Extension, Router,
 };
-use bat::assets::HighlightingAssets;
 use clap::Parser;
 use const_format::formatcp;
 use database::schema::SCHEMA_VERSION;
 use rocksdb::{Options, SliceTransform};
-use syntect::html::ClassStyle;
 use tokio::{
     net::TcpListener,
     signal::unix::{signal, SignalKind},
@@ -44,6 +42,7 @@ use crate::{
     },
     git::Git,
     layers::logger::LoggingMiddleware,
+    theme::Theme,
 };
 
 mod database;
@@ -51,6 +50,7 @@ mod git;
 mod layers;
 mod methods;
 mod syntax_highlight;
+mod theme;
 mod unified_diff_builder;
 
 const CRATE_VERSION: &str = clap::crate_version!();
@@ -113,6 +113,7 @@ impl FromStr for RefreshInterval {
 }
 
 #[tokio::main]
+#[allow(clippy::too_many_lines)]
 async fn main() -> Result<(), anyhow::Error> {
     let args: Args = Args::parse();
 
@@ -141,29 +142,31 @@ async fn main() -> Result<(), anyhow::Error> {
     let indexer_wakeup_task =
         run_indexer(db.clone(), args.scan_path.clone(), args.refresh_interval);
 
-    let bat_assets = HighlightingAssets::from_binary();
-    let syntax_set = bat_assets.get_syntax_set().unwrap().clone();
+    let css = {
+        let theme = toml::from_str::<Theme>(include_str!("../themes/github_light.toml"))
+            .unwrap()
+            .build_css();
+        let css = Box::leak(
+            format!(r#"@media (prefers-color-scheme: light){{{theme}}}"#)
+                .into_boxed_str()
+                .into_boxed_bytes(),
+        );
+        HIGHLIGHT_CSS_HASH.set(build_asset_hash(css)).unwrap();
+        css
+    };
 
-    let theme = bat_assets.get_theme("GitHub");
-    let css = syntect::html::css_for_theme_with_class_style(theme, ClassStyle::Spaced).unwrap();
-    let css = Box::leak(
-        format!(r#"@media (prefers-color-scheme: light){{{css}}}"#)
-            .into_boxed_str()
-            .into_boxed_bytes(),
-    );
-    HIGHLIGHT_CSS_HASH.set(build_asset_hash(css)).unwrap();
-
-    let dark_theme = bat_assets.get_theme("TwoDark");
-    let dark_css =
-        syntect::html::css_for_theme_with_class_style(dark_theme, ClassStyle::Spaced).unwrap();
-    let dark_css = Box::leak(
-        format!(r#"@media (prefers-color-scheme: dark){{{dark_css}}}"#)
-            .into_boxed_str()
-            .into_boxed_bytes(),
-    );
-    DARK_HIGHLIGHT_CSS_HASH
-        .set(build_asset_hash(dark_css))
-        .unwrap();
+    let dark_css = {
+        let theme = toml::from_str::<Theme>(include_str!("../themes/onedark.toml"))
+            .unwrap()
+            .build_css();
+        let css = Box::leak(
+            format!(r#"@media (prefers-color-scheme: dark){{{theme}}}"#)
+                .into_boxed_str()
+                .into_boxed_bytes(),
+        );
+        DARK_HIGHLIGHT_CSS_HASH.set(build_asset_hash(css)).unwrap();
+        css
+    };
 
     let static_favicon = |content: &'static [u8]| {
         move || async move {
@@ -211,7 +214,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .fallback(methods::repo::service)
         .layer(TimeoutLayer::new(args.request_timeout.into()))
         .layer(layer_fn(LoggingMiddleware))
-        .layer(Extension(Arc::new(Git::new(syntax_set))))
+        .layer(Extension(Arc::new(Git::new())))
         .layer(Extension(db))
         .layer(Extension(Arc::new(args.scan_path)))
         .layer(CorsLayer::new());

@@ -14,9 +14,6 @@ arc-swap = "1.7"
 askama = "0.12.0"
 axum = { version = "0.7", features = ["macros"] }
 axum-macros = "0.4.1"
-bat = { version = "0.24.0", default-features = false, features = [
-  "build-assets",
-] }
 bincode = "1.3"
 bytes = "1.5"
 clap = { version = "4.4.10", features = ["cargo", "derive"] }
@@ -26,7 +23,14 @@ const-hex = "1.12"
 const_format = "0.2"
 flate2 = { version = "1.0", default-features = false, features = ["zlib-ng"] }
 futures = "0.3"
-gix = { version = "0.66", default-features = false, features = ["fast-sha1", "zlib-ng", "tracing", "parallel", "blob-diff", "revision"] }
+gix = { version = "0.66", default-features = false, features = [
+  "fast-sha1",
+  "zlib-ng",
+  "tracing",
+  "parallel",
+  "blob-diff",
+  "revision",
+] }
 httparse = "1.7"
 humantime = "2.1"
 itertools = "0.13.0"
@@ -38,21 +42,36 @@ rocksdb = { version = "0.22", default-features = false, features = ["snappy"] }
 rust-ini = "0.21.1"
 serde = { version = "1.0", features = ["derive", "rc"] }
 simdutf8 = "0.1.5"
-syntect = "5"
 tar = "0.4"
-time = { version = "0.3", features = ["serde"] }
+time = { version = "0.3", features = ["serde", "formatting"] }
 timeago = { version = "0.4.2", default-features = false }
 tokio = { version = "1.19", features = ["full", "tracing"] }
 tokio-stream = "0.1"
 tokio-util = { version = "0.7.10", features = ["io"] }
+toml = "0.8"
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "timeout"] }
 tower-layer = "0.3"
 tower-service = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tree-sitter-css = "0.23"
+tree-sitter-fortran = "0.1"
+tree-sitter-haskell = "0.23"
+tree-sitter-highlight = "0.23"
+tree-sitter-html = "0.23"
+tree-sitter-java = "0.23"
+tree-sitter-javascript = "0.23"
+tree-sitter-md = "0.3"
+tree-sitter-rust = "0.23"
+tree-sitter-scss = "1.0"
+tree-sitter-svelte-ng = "1.0"
+tree-sitter-toml-ng = "0.6.0"
+tree-sitter-typescript = "0.23"
+tree-sitter-yaml = "0.6"
 unix_mode = "0.1"
 uuid = { version = "1.7", features = ["v4"] }
+v_htmlescape = { version = "0.15", features = ["bytes-buf"] }
 xxhash-rust = { version = "0.8.12", features = ["const_xxh3"] }
 yoke = { version = "0.7.1", features = ["derive"] }
 

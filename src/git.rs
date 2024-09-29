@@ -26,16 +26,12 @@ use gix::{
     ObjectId, ThreadSafeRepository,
 };
 use moka::future::Cache;
-use syntect::{
-    parsing::{BasicScopeStackOp, ParseState, Scope, ScopeStack, SyntaxSet, SCOPE_REPO},
-    util::LinesWithEndings,
-};
 use tar::Builder;
 use time::{OffsetDateTime, UtcOffset};
 use tracing::{error, instrument, warn};
 
 use crate::{
-    syntax_highlight::ComrakSyntectAdapter,
+    syntax_highlight::{format_file, format_file_inner, ComrakHighlightAdapter, FileIdentifier},
     unified_diff_builder::{Callback, UnifiedDiffBuilder},
 };
 
@@ -45,12 +41,11 @@ pub struct Git {
     commits: Cache<(ObjectId, bool), Arc<Commit>>,
     readme_cache: Cache<ReadmeCacheKey, Option<(ReadmeFormat, Arc<str>)>>,
     open_repositories: Cache<PathBuf, ThreadSafeRepository>,
-    syntax_set: SyntaxSet,
 }
 
 impl Git {
-    #[instrument(skip(syntax_set))]
-    pub fn new(syntax_set: SyntaxSet) -> Self {
+    #[instrument]
+    pub fn new() -> Self {
         Self {
             commits: Cache::builder()
                 .time_to_live(Duration::from_secs(30))
@@ -64,7 +59,6 @@ impl Git {
                 .time_to_idle(Duration::from_secs(120))
                 .max_capacity(100)
                 .build(),
-            syntax_set,
         }
     }
 }
@@ -155,14 +149,14 @@ impl OpenRepository {
                         let extension = path
                             .extension()
                             .or_else(|| path.file_name())
-                            .map_or_else(|| Cow::Borrowed(""), OsStr::to_string_lossy);
+                            .and_then(OsStr::to_str)
+                            .unwrap_or_default();
 
                         let content = match (formatted, simdutf8::basic::from_utf8(&blob.data)) {
                             (true, Err(_)) => Content::Binary(vec![]),
                             (true, Ok(data)) => Content::Text(Cow::Owned(format_file(
                                 data,
-                                &extension,
-                                &self.git.syntax_set,
+                                FileIdentifier::Extension(extension),
                             )?)),
                             (false, Err(_)) => Content::Binary(blob.take_data()),
                             (false, Ok(_data)) => Content::Text(Cow::Owned(unsafe {
@@ -302,7 +296,7 @@ impl OpenRepository {
                         };
 
                         if Path::new(name).extension().and_then(OsStr::to_str) == Some("md") {
-                            let value = parse_and_transform_markdown(content, &self.git.syntax_set);
+                            let value = parse_and_transform_markdown(content);
                             return Ok(Some((ReadmeFormat::Markdown, Arc::from(value))));
                         }
 
@@ -342,8 +336,7 @@ impl OpenRepository {
             let commit = head
                 .peel_to_commit()
                 .context("Couldn't find commit HEAD of repository refers to")?;
-            let (diff_output, diff_stats) =
-                fetch_diff_and_stats(&repo, &commit, highlighted.then_some(&self.git.syntax_set))?;
+            let (diff_output, diff_stats) = fetch_diff_and_stats(&repo, &commit, highlighted)?;
 
             let mut commit = Commit::try_from(commit)?;
             commit.diff_stats = diff_stats;
@@ -428,11 +421,8 @@ impl OpenRepository {
 
                     let commit = repo.find_commit(commit)?;
 
-                    let (diff_output, diff_stats) = fetch_diff_and_stats(
-                        &repo,
-                        &commit,
-                        highlighted.then_some(&self.git.syntax_set),
-                    )?;
+                    let (diff_output, diff_stats) =
+                        fetch_diff_and_stats(&repo, &commit, highlighted)?;
 
                     let mut commit = Commit::try_from(commit)?;
                     commit.diff_stats = diff_stats;
@@ -539,11 +529,10 @@ impl<'a> gix::traverse::tree::Visit for ArchivalVisitor<'a> {
     }
 }
 
-fn parse_and_transform_markdown(s: &str, syntax_set: &SyntaxSet) -> String {
+fn parse_and_transform_markdown(s: &str) -> String {
     let mut plugins = ComrakPlugins::default();
 
-    let highlighter = ComrakSyntectAdapter { syntax_set };
-    plugins.render.codefence_syntax_highlighter = Some(&highlighter);
+    plugins.render.codefence_syntax_highlighter = Some(&ComrakHighlightAdapter);
 
     // enable gfm extensions
     // https://github.github.com/gfm/
@@ -738,11 +727,11 @@ impl Commit {
     }
 }
 
-#[instrument(skip(repo, commit, syntax_set))]
+#[instrument(skip(repo, commit))]
 fn fetch_diff_and_stats(
     repo: &gix::Repository,
     commit: &gix::Commit<'_>,
-    syntax_set: Option<&SyntaxSet>,
+    highlight: bool,
 ) -> Result<(String, String)> {
     const WIDTH: usize = 80;
 
@@ -770,14 +759,13 @@ fn fetch_diff_and_stats(
         &current_tree,
         &mut repo.diff_resource_cache_for_tree_diff()?,
         |change| {
-            if let Some(syntax_set) = syntax_set {
+            if highlight {
                 DiffBuilder {
                     output: &mut diff_output,
                     resource_cache: &mut resource_cache,
                     diffs: &mut diffs,
                     formatter: SyntaxHighlightedDiffFormatter::new(
                         change.location.to_path().unwrap(),
-                        syntax_set,
                     ),
                 }
                 .handle(change)
@@ -870,161 +858,6 @@ struct FileDiff {
     path: String,
     insertions: usize,
     deletions: usize,
-}
-
-fn format_file(content: &str, extension: &str, syntax_set: &SyntaxSet) -> Result<String> {
-    let mut out = String::new();
-    format_file_inner(&mut out, content, extension, syntax_set, true)?;
-    Ok(out)
-}
-
-// TODO: this is in some serious need of refactoring
-fn format_file_inner(
-    out: &mut String,
-    content: &str,
-    extension: &str,
-    syntax_set: &SyntaxSet,
-    code_tag: bool,
-) -> Result<()> {
-    let syntax = syntax_set
-        .find_syntax_by_extension(extension)
-        .unwrap_or_else(|| syntax_set.find_syntax_plain_text());
-    let mut parse_state = ParseState::new(syntax);
-
-    let mut scope_stack = ScopeStack::new();
-    let mut span_empty = false;
-    let mut span_start = 0;
-    let mut open_spans = Vec::new();
-
-    for line in LinesWithEndings::from(content) {
-        if code_tag {
-            out.push_str("<code>");
-        }
-
-        if line.len() > 2048 {
-            // avoid highlighting overly complex lines
-            let line = if code_tag { line.trim_end() } else { line };
-            write!(out, "{}", Escape(line))?;
-        } else {
-            let mut cur_index = 0;
-            let ops = parse_state.parse_line(line, syntax_set)?;
-            out.reserve(line.len() + ops.len() * 8);
-
-            if code_tag {
-                for scope in &open_spans {
-                    out.push_str("<span class=\"");
-                    scope_to_classes(out, *scope);
-                    out.push_str("\">");
-                }
-            }
-
-            // mostly copied from syntect, but slightly modified to keep track
-            // of open spans, so we can open and close them for each line
-            for &(i, ref op) in &ops {
-                if i > cur_index {
-                    let prefix = &line[cur_index..i];
-                    let prefix = if code_tag {
-                        prefix.trim_end_matches('\n')
-                    } else {
-                        prefix
-                    };
-                    write!(out, "{}", Escape(prefix))?;
-
-                    span_empty = false;
-                    cur_index = i;
-                }
-
-                scope_stack.apply_with_hook(op, |basic_op, _| match basic_op {
-                    BasicScopeStackOp::Push(scope) => {
-                        span_start = out.len();
-                        span_empty = true;
-                        out.push_str("<span class=\"");
-                        open_spans.push(scope);
-                        scope_to_classes(out, scope);
-                        out.push_str("\">");
-                    }
-                    BasicScopeStackOp::Pop => {
-                        open_spans.pop();
-                        if span_empty {
-                            out.truncate(span_start);
-                        } else {
-                            out.push_str("</span>");
-                        }
-                        span_empty = false;
-                    }
-                })?;
-            }
-
-            let line = if code_tag { line.trim_end() } else { line };
-            if line.len() > cur_index {
-                write!(out, "{}", Escape(&line[cur_index..]))?;
-            }
-
-            if code_tag {
-                for _scope in &open_spans {
-                    out.push_str("</span>");
-                }
-            }
-        }
-
-        if code_tag {
-            out.push_str("</code>\n");
-        }
-    }
-
-    if !code_tag {
-        for _scope in &open_spans {
-            out.push_str("</span>");
-        }
-    }
-
-    Ok(())
-}
-
-fn scope_to_classes(s: &mut String, scope: Scope) {
-    let repo = SCOPE_REPO.lock().unwrap();
-    for i in 0..(scope.len()) {
-        let atom = scope.atom_at(i as usize);
-        let atom_s = repo.atom_str(atom);
-        if i != 0 {
-            s.push(' ');
-        }
-        s.push_str(atom_s);
-    }
-}
-
-// Copied from syntect as it isn't exposed from there.
-pub struct Escape<'a>(pub &'a str);
-
-impl<'a> fmt::Display for Escape<'a> {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Escape(s) = *self;
-        let pile_o_bits = s;
-        let mut last = 0;
-        for (i, ch) in s.bytes().enumerate() {
-            match ch as char {
-                '<' | '>' | '&' | '\'' | '"' => {
-                    fmt.write_str(&pile_o_bits[last..i])?;
-                    let s = match ch as char {
-                        '>' => "&gt;",
-                        '<' => "&lt;",
-                        '&' => "&amp;",
-                        '\'' => "&#39;",
-                        '"' => "&quot;",
-                        _ => unreachable!(),
-                    };
-                    fmt.write_str(s)?;
-                    last = i + 1;
-                }
-                _ => {}
-            }
-        }
-
-        if last < s.len() {
-            fmt.write_str(&pile_o_bits[last..])?;
-        }
-        Ok(())
-    }
 }
 
 trait DiffFormatter {
@@ -1217,21 +1050,18 @@ impl Callback for PlainDiffFormatter {
 }
 
 struct SyntaxHighlightedDiffFormatter<'a> {
-    syntax_set: &'a SyntaxSet,
-    extension: Cow<'a, str>,
+    extension: &'a str,
 }
 
 impl<'a> SyntaxHighlightedDiffFormatter<'a> {
-    fn new(path: &'a Path, syntax_set: &'a SyntaxSet) -> Self {
+    fn new(path: &'a Path) -> Self {
         let extension = path
             .extension()
             .or_else(|| path.file_name())
-            .map_or_else(|| Cow::Borrowed(""), OsStr::to_string_lossy);
+            .and_then(OsStr::to_str)
+            .unwrap_or_default();
 
-        Self {
-            syntax_set,
-            extension,
-        }
+        Self { extension }
     }
 
     fn write(&self, output: &mut String, class: &str, data: &str) {
@@ -1239,8 +1069,7 @@ impl<'a> SyntaxHighlightedDiffFormatter<'a> {
         format_file_inner(
             output,
             data,
-            self.extension.as_ref(),
-            self.syntax_set,
+            FileIdentifier::Extension(self.extension),
             false,
         )
         .unwrap();
@@ -1251,7 +1080,7 @@ impl<'a> SyntaxHighlightedDiffFormatter<'a> {
 impl<'a> DiffFormatter for SyntaxHighlightedDiffFormatter<'a> {
     fn file_header(&self, output: &mut String, data: Arguments<'_>) {
         write!(output, r#"<span class="diff-file-header">"#).unwrap();
-        format_file_inner(output, &data.to_string(), "patch", self.syntax_set, false).unwrap();
+        write!(output, "{data}").unwrap();
         writeln!(output, r#"</span>"#).unwrap();
     }
 
@@ -1263,14 +1092,7 @@ impl<'a> DiffFormatter for SyntaxHighlightedDiffFormatter<'a> {
         _left_content: &[u8],
         _right_content: &[u8],
     ) {
-        format_file_inner(
-            output,
-            &format!("Binary files {left} and {right} differ"),
-            "patch",
-            self.syntax_set,
-            false,
-        )
-        .unwrap();
+        write!(output, "Binary files {left} and {right} differ").unwrap();
     }
 }
 

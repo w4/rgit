@@ -1,44 +1,189 @@
-use std::{collections::HashMap, io::Write};
-
-use comrak::adapters::SyntaxHighlighterAdapter;
-use syntect::{
-    html::{ClassStyle, ClassedHTMLGenerator},
-    parsing::SyntaxSet,
-    util::LinesWithEndings,
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    fmt::Write as FmtWrite,
+    io::{ErrorKind, Write as IoWrite},
+    sync::LazyLock,
 };
 
-pub struct ComrakSyntectAdapter<'a> {
-    pub(crate) syntax_set: &'a SyntaxSet,
+use comrak::adapters::SyntaxHighlighterAdapter;
+use tracing::debug;
+use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
+
+thread_local! {
+    static HIGHLIGHTER: RefCell<Highlighter> = RefCell::new(Highlighter::new());
 }
 
-impl SyntaxHighlighterAdapter for ComrakSyntectAdapter<'_> {
+macro_rules! count {
+    () => (0);
+    ($e:expr) => (1);
+    ($e:expr, $($rest:expr),*) => (1 + count!($($rest),*));
+}
+
+macro_rules! define_classes {
+    ($($name:literal => $class:literal),*,) => {
+        static HIGHLIGHT_NAMES: [&str; count!($($name),*)] = [
+            $($name),*
+        ];
+
+        static HIGHLIGHT_CLASSES: [&str; count!($($name),*)] = [
+            $($class),*
+        ];
+    };
+}
+
+define_classes! {
+    "keyword.directive" => "keyword directive",
+    "markup.strikethrough" => "markup strikethrough",
+    "markup.link" => "markup link",
+    "keyword.control.conditional" => "keyword control conditional",
+    "markup.bold" => "markup bold",
+    "diff.plus" => "diff plus",
+    "markup.heading.2" => "markup heading 2",
+    "markup" => "markup",
+    "diff.delta" => "diff delta",
+    "variable.other.member" => "variable other member",
+    "namespace" => "namespace",
+    "comment.line" => "comment line",
+    "function" => "function",
+    "keyword.operator" => "keyword operator",
+    "punctuation.bracket" => "punctuation bracket",
+    "markup.list" => "markup list",
+    "type.builtin" => "type builtin",
+    "keyword.storage.modifier" => "keyword storage modifier",
+    "constant" => "constant",
+    "markup.italic" => "markup italic",
+    "variable" => "variable",
+    "keyword" => "keyword",
+    "punctuation.special" => "punctuation special",
+    "string.special.path" => "string special path",
+    "keyword.storage.type" => "keyword storage type",
+    "markup.heading.5" => "markup heading 5",
+    "markup.heading.6" => "markup heading 6",
+    "markup.link.label" => "markup link label",
+    "markup.list.numbered" => "markup list numbered",
+    "diff.delta.moved" => "diff delta moved",
+    "constant.numeric" => "constant numeric",
+    "markup.heading" => "markup heading",
+    "markup.link.text" => "markup link text",
+    "keyword.function" => "keyword function",
+    "string.special.url" => "string special url",
+    "keyword.control.return" => "keyword control return",
+    "keyword.control.repeat" => "keyword control repeat",
+    "constant.builtin" => "constant builtin",
+    "type.enum.variant" => "type enum variant",
+    "markup.raw.block" => "markup raw block",
+    "markup.heading.3" => "markup heading 3",
+    "escape" => "escape",
+    "comment.block" => "comment block",
+    "constant.numeric.integer" => "constant numeric integer",
+    "punctuation.delimiter" => "punctuation delimiter",
+    "constructor" => "constructor",
+    "type" => "type",
+    "string.regexp" => "string regexp",
+    "variable.parameter" => "variable parameter",
+    "markup.quote" => "markup quote",
+    "string.special" => "string special",
+    "constant.numeric.float" => "constant numeric float",
+    "constant.character.escape" => "constant character escape",
+    "tag" => "tag",
+    "keyword.storage" => "keyword storage",
+    "string" => "string",
+    "function.macro" => "function macro",
+    "markup.list.unnumbered" => "markup list unnumbered",
+    "diff.minus" => "diff minus",
+    "punctuation" => "punctuation",
+    "markup.link.url" => "markup link url",
+    "function.method" => "function method",
+    "markup.raw" => "markup raw",
+    "function.special" => "function special",
+    "attribute" => "attribute",
+    "operator" => "operator",
+    "special" => "special",
+    "function.builtin" => "function builtin",
+    "diff" => "diff",
+    "markup.heading.4" => "markup heading 4",
+    "keyword.control" => "keyword control",
+    "markup.list.unchecked" => "markup list unchecked",
+    "keyword.control.exception" => "keyword control exception",
+    "constant.builtin.boolean" => "constant builtin boolean",
+    "markup.heading.1" => "markup heading 1",
+    "markup.heading.marker" => "markup heading marker",
+    "constant.character" => "constant character",
+    "markup.raw.inline" => "markup raw inline",
+    "variable.builtin" => "variable builtin",
+    "variable.other" => "variable other",
+    "tag.builtin" => "tag builtin",
+    "type.enum" => "type enum",
+    "comment.block.documentation" => "comment block documentation",
+    "comment" => "comment",
+    "string.special.symbol" => "string special symbol",
+    "label" => "label",
+    "keyword.control.import" => "keyword control import",
+    "markup.list.checked" => "markup list checked",
+}
+
+macro_rules! build_highlighter_configs {
+    ($($i:literal => $($extension:literal)|* => $($token:literal)|* => $config:expr),*,) => {
+        static BUILD_HIGHLIGHTER_CONFIGS: LazyLock<[HighlightConfiguration; count!($($config),*)]> = LazyLock::new(|| [
+            $({
+                let mut config = $config.unwrap();
+                config.configure(&HIGHLIGHT_NAMES);
+                config
+            }),*
+        ]);
+
+        pub fn fetch_highlighter_config(extension: &str) -> Option<&'static HighlightConfiguration> {
+            match extension {
+                $($($extension)|* => Some(&BUILD_HIGHLIGHTER_CONFIGS[$i])),*,
+                _ => None,
+            }
+        }
+
+        pub fn fetch_highlighter_config_by_token(extension: &str) -> Option<&'static HighlightConfiguration> {
+            match extension {
+                $($($token)|* => Some(&BUILD_HIGHLIGHTER_CONFIGS[$i])),*,
+                _ => None,
+            }
+        }
+    };
+}
+
+build_highlighter_configs! {
+    0 => "java" => "java" => HighlightConfiguration::new(tree_sitter_java::LANGUAGE.into(), "java", tree_sitter_java::HIGHLIGHTS_QUERY, "", ""),
+    1 => "html" => "html" => HighlightConfiguration::new(tree_sitter_html::LANGUAGE.into(), "html", include_str!("../grammar/html/highlights.scm"), include_str!("../grammar/html/injections.scm"), ""),
+    2 => "md" => "markdown" => HighlightConfiguration::new(tree_sitter_md::LANGUAGE.into(), "markdown", tree_sitter_md::HIGHLIGHT_QUERY_BLOCK, tree_sitter_md::INJECTION_QUERY_BLOCK, ""),
+    3 => "rs" => "rust" => HighlightConfiguration::new(tree_sitter_rust::LANGUAGE.into(), "rust", tree_sitter_rust::HIGHLIGHTS_QUERY, tree_sitter_rust::INJECTIONS_QUERY, tree_sitter_rust::TAGS_QUERY),
+    4 => "toml" => "toml" => HighlightConfiguration::new(tree_sitter_toml_ng::language(), "toml", tree_sitter_toml_ng::HIGHLIGHTS_QUERY, "", ""),
+    5 => "yaml" | "yml" => "yaml" | "yml" => HighlightConfiguration::new(tree_sitter_yaml::language(), "yaml", tree_sitter_yaml::HIGHLIGHTS_QUERY, "", ""),
+    6 => "hs" => "haskell" => HighlightConfiguration::new(tree_sitter_haskell::LANGUAGE.into(), "haskell", tree_sitter_haskell::HIGHLIGHTS_QUERY, tree_sitter_haskell::INJECTIONS_QUERY, tree_sitter_haskell::LOCALS_QUERY),
+    7 => "f" | "f90" | "for" => "fortran" => HighlightConfiguration::new(tree_sitter_fortran::LANGUAGE.into(), "fortran", "", "", ""),
+    8 => "svelte" => "svelte" => HighlightConfiguration::new(tree_sitter_svelte_ng::LANGUAGE.into(), "svelte", tree_sitter_svelte_ng::HIGHLIGHTS_QUERY, tree_sitter_svelte_ng::INJECTIONS_QUERY, tree_sitter_svelte_ng::LOCALS_QUERY),
+    9 => "js" => "js" | "javascript" => HighlightConfiguration::new(tree_sitter_javascript::LANGUAGE.into(), "javascript", tree_sitter_javascript::HIGHLIGHT_QUERY, tree_sitter_javascript::INJECTIONS_QUERY, tree_sitter_javascript::LOCALS_QUERY),
+    10 => "jsx" => "jsx" => HighlightConfiguration::new(tree_sitter_javascript::LANGUAGE.into(), "jsx", tree_sitter_javascript::JSX_HIGHLIGHT_QUERY, tree_sitter_javascript::INJECTIONS_QUERY, tree_sitter_javascript::LOCALS_QUERY),
+    11 => "ts" => "ts" | "typescript" => HighlightConfiguration::new(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(), "typescript", tree_sitter_typescript::HIGHLIGHTS_QUERY, "", tree_sitter_typescript::TAGS_QUERY),
+    12 => "tsx" => "tsx" => HighlightConfiguration::new(tree_sitter_typescript::LANGUAGE_TSX.into(), "tsx", tree_sitter_typescript::HIGHLIGHTS_QUERY, "", tree_sitter_typescript::TAGS_QUERY),
+    13 => "scss" => "scss" => HighlightConfiguration::new(tree_sitter_scss::language(), "scss", tree_sitter_scss::HIGHLIGHTS_QUERY, "", ""),
+    14 => "css" => "css" => HighlightConfiguration::new(tree_sitter_css::LANGUAGE.into(), "css", tree_sitter_css::HIGHLIGHTS_QUERY, "", ""),
+}
+
+pub struct ComrakHighlightAdapter;
+
+impl SyntaxHighlighterAdapter for ComrakHighlightAdapter {
     fn write_highlighted(
         &self,
-        output: &mut dyn Write,
+        output: &mut dyn IoWrite,
         lang: Option<&str>,
         code: &str,
     ) -> std::io::Result<()> {
-        let syntax = lang
-            .and_then(|v| self.syntax_set.find_syntax_by_token(v))
-            .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text());
-
-        let mut html_generator =
-            ClassedHTMLGenerator::new_with_class_style(syntax, self.syntax_set, ClassStyle::Spaced);
-
-        for line in LinesWithEndings::from(code) {
-            let _res = html_generator.parse_html_for_line_which_includes_newline(line);
-        }
-
-        write!(
-            output,
-            "<code>{}</code>",
-            html_generator.finalize().replace('\n', "</code>\n<code>")
-        )
+        let out = format_file(code, FileIdentifier::Token(lang.unwrap_or_default()))
+            .map_err(|e| std::io::Error::new(ErrorKind::Other, e))?;
+        output.write_all(out.as_bytes())
     }
 
     fn write_pre_tag(
         &self,
-        output: &mut dyn Write,
+        output: &mut dyn IoWrite,
         _attributes: HashMap<String, String>,
     ) -> std::io::Result<()> {
         write!(output, r#"<pre>"#)
@@ -46,9 +191,102 @@ impl SyntaxHighlighterAdapter for ComrakSyntectAdapter<'_> {
 
     fn write_code_tag(
         &self,
-        _output: &mut dyn Write,
+        _output: &mut dyn IoWrite,
         _attributes: HashMap<String, String>,
     ) -> std::io::Result<()> {
         Ok(())
     }
+}
+
+#[derive(Copy, Clone)]
+pub enum FileIdentifier<'a> {
+    Extension(&'a str),
+    Token(&'a str),
+}
+
+pub fn format_file(content: &str, identifier: FileIdentifier<'_>) -> anyhow::Result<String> {
+    let mut out = String::new();
+    format_file_inner(&mut out, content, identifier, true)?;
+    Ok(out)
+}
+
+pub fn format_file_inner(
+    out: &mut String,
+    content: &str,
+    identifier: FileIdentifier<'_>,
+    code_tag: bool,
+) -> anyhow::Result<()> {
+    let config = match identifier {
+        FileIdentifier::Extension(v) => fetch_highlighter_config(v),
+        FileIdentifier::Token(v) => fetch_highlighter_config_by_token(v),
+    };
+
+    let line_prefix = if code_tag { "<code>" } else { "" };
+
+    let line_suffix = if code_tag { "</code>\n" } else { "\n" };
+
+    let Some(config) = config else {
+        for line in content.lines() {
+            out.push_str(line_prefix);
+            v_htmlescape::b_escape(line.as_bytes(), out);
+            out.push_str(line_suffix);
+        }
+
+        return Ok(());
+    };
+
+    HIGHLIGHTER.with_borrow_mut(|highlighter| {
+        let mut spans = highlighter.highlight(config, content.as_bytes(), None, |extension| {
+            debug!(extension, "Highlighter switch requested");
+            fetch_highlighter_config(extension).or(fetch_highlighter_config_by_token(extension))
+        })?;
+
+        let mut tag_open = true;
+        out.push_str(line_prefix);
+
+        while let Some(span) = spans.next().transpose()? {
+            if !tag_open {
+                out.push_str(line_prefix);
+                tag_open = true;
+            }
+
+            match span {
+                HighlightEvent::Source { start, end } => {
+                    let content = &content[start..end];
+
+                    for (i, line) in content.lines().enumerate() {
+                        if i != 0 {
+                            out.push_str(line_suffix);
+                            out.push_str(line_prefix);
+                        }
+
+                        v_htmlescape::b_escape(line.as_bytes(), out);
+                    }
+
+                    if content.ends_with('\n') {
+                        out.push_str(line_suffix);
+                        tag_open = false;
+                    }
+                }
+                HighlightEvent::HighlightStart(highlight) => {
+                    write!(
+                        out,
+                        r#"<span class="highlight {}">"#,
+                        HIGHLIGHT_CLASSES[highlight.0]
+                    )?;
+                }
+                HighlightEvent::HighlightEnd => {
+                    out.push_str("</span>");
+                }
+            }
+        }
+
+        if tag_open {
+            out.push_str(line_suffix);
+        }
+
+        Ok::<_, anyhow::Error>(())
+    })?;
+
+    Ok(())
 }

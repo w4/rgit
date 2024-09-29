@@ -1,24 +1,11 @@
-FROM rust:1.81-slim AS builder
+FROM nixos/nix:2.24.9 AS builder
 
-RUN rustup component add rustfmt
-RUN apt-get update && apt-get install -y pkg-config clang cmake
+RUN nix-channel --update
+RUN echo "experimental-features = nix-command flakes" >> /etc/nix/nix.conf
 
-COPY . /sources
-WORKDIR /sources
-RUN cargo build --release
+WORKDIR /app
+COPY . .
 
-FROM debian:bookworm-slim
+RUN nix build .#
 
-# Install git and cleanup package lists.
-# This is required for git-http-backend to work.
-RUN apt-get update && \
-    apt-get install -y git && \
-    rm -rf /var/lib/apt/lists/*
-
-COPY --from=builder /sources/target/release/rgit /rgit
-
-COPY ./scripts/docker/entrypoint.sh .
-RUN chmod +x entrypoint.sh
-
-EXPOSE 8000
-ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/app/result/bin/rgit"]

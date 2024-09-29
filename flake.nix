@@ -8,14 +8,28 @@
       url = "github:rustsec/advisory-db";
       flake = false;
     };
+
+    helix = {
+      url = "github:helix-editor/helix";
+      flake = false;
+    };
   };
 
-  outputs = { self, nixpkgs, utils, crane, advisory-db, treefmt-nix }:
+  outputs = { self, nixpkgs, utils, crane, advisory-db, treefmt-nix, helix }:
     utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
         craneLib = crane.mkLib pkgs;
         src = craneLib.cleanCargoSource ./.;
+        helix-grammar = pkgs.callPackage "${helix}/grammars.nix" { inherit pkgs; };
+        rgit-grammar = pkgs.runCommand "consolidated-rgit-grammars" { } ''
+          mkdir -p $out
+          for file in ${helix-grammar}/*; do
+            ln -s "$file" "$out/libtree-sitter-$(basename "$file")"
+          done
+          ln -s "${helix}/languages.toml" "$out/languages.toml"
+          ln -s "${helix}/runtime/queries" "$out/queries"
+        '';
         commonArgs = {
           inherit src;
           strictDeps = true;
@@ -23,6 +37,7 @@
           nativeBuildInputs = with pkgs; [ cmake clang ];
           LIBCLANG_PATH = "${pkgs.clang.cc.lib}/lib";
           ROCKSDB_LIB_DIR = "${pkgs.rocksdb}/lib";
+          TREE_SITTER_GRAMMAR_LIB_DIR = "${rgit-grammar}";
         };
         cargoArtifacts = craneLib.buildDepsOnly commonArgs;
         rgit = craneLib.buildPackage (commonArgs // {
@@ -33,6 +48,7 @@
             fileset = pkgs.lib.fileset.unions [
               ./Cargo.toml
               ./Cargo.lock
+              ./tree-sitter-grammar-repository
               ./src
               ./statics
               ./templates

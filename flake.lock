@@ -31,6 +31,22 @@
         "type": "github"
       }
     },
+    "helix": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1727613050,
+        "narHash": "sha256-vxf/5aCNjy0OKzkkkNoeUnjr1lWQDmcKW+UXKpU4weE=",
+        "owner": "helix-editor",
+        "repo": "helix",
+        "rev": "2ce4c6d5fa3e50464b41a3d0190ad0e5ada2fc3c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "helix-editor",
+        "repo": "helix",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1727335715,
@@ -65,6 +81,7 @@
       "inputs": {
         "advisory-db": "advisory-db",
         "crane": "crane",
+        "helix": "helix",
         "nixpkgs": "nixpkgs",
         "treefmt-nix": "treefmt-nix",
         "utils": "utils"

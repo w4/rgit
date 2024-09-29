@@ -1,21 +1,3 @@
-use anyhow::{anyhow, Context, Result};
-use axum::response::IntoResponse;
-use bytes::{buf::Writer, BufMut, Bytes, BytesMut};
-use comrak::{ComrakPlugins, Options};
-use flate2::write::GzEncoder;
-use gix::{
-    actor::SignatureRef,
-    bstr::{BStr, BString, ByteSlice, ByteVec},
-    diff::blob::{platform::prepare_diff::Operation, Sink},
-    object::tree::EntryKind,
-    object::Kind,
-    objs::tree::EntryRef,
-    prelude::TreeEntryRefExt,
-    traverse::tree::visit::Action,
-    url::Scheme,
-    ObjectId, ThreadSafeRepository, Url,
-};
-use moka::future::Cache;
 use std::{
     borrow::Cow,
     collections::{BTreeMap, VecDeque},
@@ -27,6 +9,24 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+
+use anyhow::{anyhow, Context, Result};
+use axum::response::IntoResponse;
+use bytes::{buf::Writer, BufMut, Bytes, BytesMut};
+use comrak::{ComrakPlugins, Options};
+use flate2::write::GzEncoder;
+use gix::{
+    actor::SignatureRef,
+    bstr::{BStr, BString, ByteSlice, ByteVec},
+    diff::blob::{platform::prepare_diff::Operation, Sink},
+    object::{tree::EntryKind, Kind},
+    objs::tree::EntryRef,
+    prelude::TreeEntryRefExt,
+    traverse::tree::visit::Action,
+    url::Scheme,
+    ObjectId, ThreadSafeRepository, Url,
+};
+use moka::future::Cache;
 use tar::Builder;
 use time::{OffsetDateTime, UtcOffset};
 use tracing::{error, instrument, warn};
@@ -144,21 +144,15 @@ impl OpenRepository {
 
                 match object.kind {
                     Kind::Blob => {
-                        let path = path.join(item.filename().to_path_lossy());
                         let mut blob = object.into_blob();
 
                         let size = blob.data.len();
-                        let extension = path
-                            .extension()
-                            .or_else(|| path.file_name())
-                            .and_then(OsStr::to_str)
-                            .unwrap_or_default();
 
                         let content = match (formatted, simdutf8::basic::from_utf8(&blob.data)) {
                             (true, Err(_)) => Content::Binary(vec![]),
                             (true, Ok(data)) => Content::Text(Cow::Owned(format_file(
                                 data,
-                                FileIdentifier::Extension(extension),
+                                FileIdentifier::Path(path.as_path()),
                             )?)),
                             (false, Err(_)) => Content::Binary(blob.take_data()),
                             (false, Ok(_data)) => Content::Text(Cow::Owned(unsafe {
@@ -1091,29 +1085,17 @@ impl Callback for PlainDiffFormatter {
 }
 
 struct SyntaxHighlightedDiffFormatter<'a> {
-    extension: &'a str,
+    path: &'a Path,
 }
 
 impl<'a> SyntaxHighlightedDiffFormatter<'a> {
     fn new(path: &'a Path) -> Self {
-        let extension = path
-            .extension()
-            .or_else(|| path.file_name())
-            .and_then(OsStr::to_str)
-            .unwrap_or_default();
-
-        Self { extension }
+        Self { path }
     }
 
     fn write(&self, output: &mut String, class: &str, data: &str) {
         write!(output, r#"<span class="diff-{class}">"#).unwrap();
-        format_file_inner(
-            output,
-            data,
-            FileIdentifier::Extension(self.extension),
-            false,
-        )
-        .unwrap();
+        format_file_inner(output, data, FileIdentifier::Path(self.path), false).unwrap();
         write!(output, r#"</span>"#).unwrap();
     }
 }

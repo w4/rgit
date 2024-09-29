@@ -42,6 +42,7 @@ use crate::{
     },
     git::Git,
     layers::logger::LoggingMiddleware,
+    syntax_highlight::prime_highlighters,
     theme::Theme,
 };
 
@@ -189,6 +190,10 @@ async fn main() -> Result<(), anyhow::Error> {
             resp
         }
     };
+
+    info!("Priming highlighters...");
+    prime_highlighters();
+    info!("Server starting up...");
 
     let app = Router::new()
         .route("/", get(methods::index::handle))

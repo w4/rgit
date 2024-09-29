@@ -2,6 +2,7 @@
 
 use std::{
     fmt::Debug,
+    future::Future,
     net::SocketAddr,
     task::{Context, Poll},
     time::Instant,
@@ -11,7 +12,7 @@ use axum::{
     extract,
     http::{HeaderValue, Method, Request, Response},
 };
-use futures::future::{Future, FutureExt, Join, Map, Ready};
+use futures_util::future::{FutureExt, Join, Map, Ready};
 use tokio::task::futures::TaskLocalFuture;
 use tower_service::Service;
 use tracing::{error, info, instrument::Instrumented, Instrument, Span};
@@ -63,9 +64,9 @@ where
             user_agent: req.headers().get(axum::http::header::USER_AGENT).cloned(),
         };
 
-        futures::future::join(
+        futures_util::future::join(
             REQ_TIMESTAMP.scope(log_message.start, self.0.call(req).instrument(span)),
-            futures::future::ready(log_message),
+            futures_util::future::ready(log_message),
         )
         .map(|(response, pending_log_message)| {
             let mut response = response.unwrap_infallible();

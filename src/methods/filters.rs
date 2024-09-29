@@ -53,11 +53,3 @@ pub fn gravatar(email: &str) -> Result<&'static str, askama::Error> {
 
     Ok(url)
 }
-
-#[allow(dead_code)]
-pub fn md(md: &str) -> Result<String, askama::Error> {
-    Ok(comrak::markdown_to_html(
-        md,
-        &comrak::ComrakOptions::default(),
-    ))
-}

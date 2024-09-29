@@ -11,7 +11,7 @@ use axum::{
     Extension,
 };
 use bytes::{Buf, Bytes, BytesMut};
-use futures::TryStreamExt;
+use futures_util::TryStreamExt;
 use httparse::Status;
 use tokio::{
     io::AsyncReadExt,

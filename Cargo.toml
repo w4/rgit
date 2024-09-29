@@ -14,18 +14,26 @@ members = ["tree-sitter-grammar-repository"]
 [dependencies]
 anyhow = "1.0"
 arc-swap = "1.7"
-askama = "0.12.0"
-axum = { version = "0.7", features = ["macros"] }
-axum-macros = "0.4.1"
+askama = { version = "0.12.0", default-features = false }
+axum = { version = "0.7", default-features = false, features = [
+  "query",
+  "tokio",
+  "http1",
+] }
 bincode = "1.3"
 bytes = "1.5"
-clap = { version = "4.4.10", features = ["cargo", "derive"] }
-comrak = "0.28.0"
-console-subscriber = { version = "0.4", features = ["parking_lot"] }
+clap = { version = "4.4.10", default-features = false, features = [
+  "std",
+  "cargo",
+  "derive",
+  "help",
+  "usage",
+] }
+comrak = { version = "0.28.0", default-features = false }
 const-hex = "1.12"
 const_format = "0.2"
 flate2 = { version = "1.0", default-features = false, features = ["zlib-ng"] }
-futures = "0.3"
+futures-util = "0.3"
 gix = { version = "0.66", default-features = false, features = [
   "fast-sha1",
   "zlib-ng",
@@ -45,19 +53,24 @@ rocksdb = { version = "0.22", default-features = false, features = ["snappy"] }
 rust-ini = "0.21.1"
 serde = { version = "1.0", features = ["derive", "rc"] }
 simdutf8 = "0.1.5"
-tar = "0.4"
+tar = { version = "0.4", default-features = false }
 time = { version = "0.3", features = ["serde", "formatting"] }
 timeago = { version = "0.4.2", default-features = false }
 tokio = { version = "1.19", features = ["full", "tracing"] }
 tokio-stream = "0.1"
 tokio-util = { version = "0.7.10", features = ["io"] }
-toml = "0.8"
+toml = { version = "0.8", default-features = false, features = ["parse"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "timeout"] }
 tower-layer = "0.3"
 tower-service = "0.3"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+  "env-filter",
+  "smallvec",
+  "parking_lot",
+  "fmt",
+] }
 tree-sitter-grammar-repository = { path = "./tree-sitter-grammar-repository" }
 tree-sitter-highlight = "0.23"
 unix_mode = "0.1"

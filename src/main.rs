@@ -122,17 +122,11 @@ async fn main() -> Result<(), anyhow::Error> {
         std::env::set_var("RUST_LOG", "info");
     }
 
-    let console_layer = console_subscriber::spawn();
-
     let logger_layer = tracing_subscriber::fmt::layer();
-    #[cfg(debug_assertions)]
-    let logger_layer = logger_layer.pretty();
-
     let env_filter = EnvFilter::from_default_env();
 
     tracing_subscriber::registry()
         .with(env_filter)
-        .with(console_layer)
         .with(logger_layer)
         .init();
 
@@ -311,7 +305,7 @@ async fn run_indexer(
         let mut sighup = signal(SignalKind::hangup()).expect("could not subscribe to sighup");
         let build_sleeper = move || async move {
             match refresh_interval {
-                RefreshInterval::Never => futures::future::pending().await,
+                RefreshInterval::Never => futures_util::future::pending().await,
                 RefreshInterval::Duration(v) => tokio::time::sleep(v).await,
             };
         };

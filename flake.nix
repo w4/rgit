@@ -10,7 +10,7 @@
     };
 
     helix = {
-      url = "github:helix-editor/helix";
+      url = "github:JordanForks/helix";
       flake = false;
     };
   };

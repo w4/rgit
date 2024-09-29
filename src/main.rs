@@ -128,9 +128,7 @@ async fn main() -> Result<(), anyhow::Error> {
     #[cfg(debug_assertions)]
     let logger_layer = logger_layer.pretty();
 
-    let env_filter = EnvFilter::from_default_env()
-        .add_directive("tokio=trace".parse()?)
-        .add_directive("runtime=trace".parse()?);
+    let env_filter = EnvFilter::from_default_env();
 
     tracing_subscriber::registry()
         .with(env_filter)

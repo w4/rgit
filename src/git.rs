@@ -1,15 +1,3 @@
-use std::{
-    borrow::Cow,
-    collections::VecDeque,
-    ffi::OsStr,
-    fmt::{self, Arguments, Write},
-    io::ErrorKind,
-    path::{Path, PathBuf},
-    str::FromStr,
-    sync::Arc,
-    time::Duration,
-};
-
 use anyhow::{anyhow, Context, Result};
 use axum::response::IntoResponse;
 use bytes::{buf::Writer, BufMut, Bytes, BytesMut};
@@ -19,13 +7,26 @@ use gix::{
     actor::SignatureRef,
     bstr::{BStr, BString, ByteSlice, ByteVec},
     diff::blob::{platform::prepare_diff::Operation, Sink},
+    object::tree::EntryKind,
     object::Kind,
     objs::tree::EntryRef,
     prelude::TreeEntryRefExt,
     traverse::tree::visit::Action,
-    ObjectId, ThreadSafeRepository,
+    url::Scheme,
+    ObjectId, ThreadSafeRepository, Url,
 };
 use moka::future::Cache;
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, VecDeque},
+    ffi::OsStr,
+    fmt::{self, Arguments, Write},
+    io::ErrorKind,
+    path::{Path, PathBuf},
+    str::FromStr,
+    sync::Arc,
+    time::Duration,
+};
 use tar::Builder;
 use time::{OffsetDateTime, UtcOffset};
 use tracing::{error, instrument, warn};
@@ -106,6 +107,7 @@ pub struct OpenRepository {
 }
 
 impl OpenRepository {
+    #[allow(clippy::too_many_lines)]
     pub async fn path(
         self: Arc<Self>,
         path: Option<PathBuf>,
@@ -182,32 +184,62 @@ impl OpenRepository {
             }
 
             let mut tree_items = Vec::new();
+            let submodules = repo
+                .submodules()?
+                .into_iter()
+                .flatten()
+                .filter_map(|v| Some((v.name().to_path_lossy().to_path_buf(), v.url().ok()?)))
+                .collect::<BTreeMap<_, _>>();
 
             for item in tree.iter() {
                 let item = item?;
-                let object = item
-                    .object()
-                    .context("Expected item in tree to be object but it wasn't")?;
 
                 let path = path
                     .clone()
                     .unwrap_or_default()
                     .join(item.filename().to_path_lossy());
 
-                tree_items.push(match object.kind {
-                    Kind::Blob => TreeItem::File(File {
-                        mode: item.mode().0,
-                        size: object.into_blob().data.len(),
-                        path,
-                        name: item.filename().to_string(),
-                    }),
-                    Kind::Tree => TreeItem::Tree(Tree {
-                        mode: item.mode().0,
-                        path,
-                        name: item.filename().to_string(),
-                    }),
-                    _ => continue,
-                });
+                match item.mode().kind() {
+                    EntryKind::Tree
+                    | EntryKind::Blob
+                    | EntryKind::BlobExecutable
+                    | EntryKind::Link => {
+                        let object = item
+                            .object()
+                            .context("Expected item in tree to be object but it wasn't")?;
+
+                        tree_items.push(match object.kind {
+                            Kind::Blob => TreeItem::File(File {
+                                mode: item.mode().0,
+                                size: object.into_blob().data.len(),
+                                path,
+                                name: item.filename().to_string(),
+                            }),
+                            Kind::Tree => TreeItem::Tree(Tree {
+                                mode: item.mode().0,
+                                path,
+                                name: item.filename().to_string(),
+                            }),
+                            _ => continue,
+                        });
+                    }
+                    EntryKind::Commit => {
+                        if let Some(mut url) = submodules.get(path.as_path()).cloned() {
+                            if matches!(url.scheme, Scheme::Git | Scheme::Ssh) {
+                                url.scheme = Scheme::Https;
+                            }
+
+                            tree_items.push(TreeItem::Submodule(Submodule {
+                                mode: item.mode().0,
+                                name: item.filename().to_string(),
+                                url,
+                                oid: item.object_id(),
+                            }));
+
+                            continue;
+                        }
+                    }
+                }
             }
 
             Ok(PathDestination::Tree(tree_items))
@@ -561,6 +593,15 @@ pub enum PathDestination {
 pub enum TreeItem {
     Tree(Tree),
     File(File),
+    Submodule(Submodule),
+}
+
+#[derive(Debug)]
+pub struct Submodule {
+    pub mode: u16,
+    pub name: String,
+    pub url: Url,
+    pub oid: ObjectId,
 }
 
 #[derive(Debug)]

@@ -28,6 +28,12 @@
         <td><pre><a href="/{{ repo.display() }}/tree/{{ file.path.display() }}{{ query }}">{{ file.name }}</a></pre></td>
         <td><pre>{{ file.size }}</pre></td>
         <td></td>
+
+        {%- when crate::git::TreeItem::Submodule with (submodule) -%}
+        <td><pre>{{ submodule.mode|file_perms }}</pre></td>
+        <td><pre>🔗 <a href="{{ submodule.url }}">{{ submodule.name }}</a> @ {{ submodule.oid.to_hex_with_len(7) }}</pre></td>
+        <td></td>
+        <td></td>
         {%- endmatch %}
     </tr>
     {% endfor -%}

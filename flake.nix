@@ -36,6 +36,8 @@
               ./src
               ./statics
               ./templates
+              ./grammar
+              ./themes
               ./build.rs
             ];
           };

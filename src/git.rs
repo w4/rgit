@@ -669,7 +669,7 @@ pub struct DetailedTag {
 pub struct CommitUser {
     name: String,
     email: String,
-    time: OffsetDateTime,
+    time: (i64, i32),
 }
 
 impl TryFrom<SignatureRef<'_>> for CommitUser {
@@ -679,8 +679,9 @@ impl TryFrom<SignatureRef<'_>> for CommitUser {
         Ok(CommitUser {
             name: v.name.to_string(),
             email: v.email.to_string(),
-            time: OffsetDateTime::from_unix_timestamp(v.time.seconds)?
-                .to_offset(UtcOffset::from_whole_seconds(v.time.offset)?),
+            time: (v.time.seconds, v.time.offset),
+            // time: OffsetDateTime::from_unix_timestamp(v.time.seconds)?
+            //     .to_offset(UtcOffset::from_whole_seconds(v.time.offset)?),
         })
     }
 }
@@ -695,7 +696,9 @@ impl CommitUser {
     }
 
     pub fn time(&self) -> OffsetDateTime {
-        self.time
+        OffsetDateTime::from_unix_timestamp(self.time.0)
+            .unwrap()
+            .to_offset(UtcOffset::from_whole_seconds(self.time.1).unwrap())
     }
 }
 

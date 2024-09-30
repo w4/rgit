@@ -2,21 +2,23 @@ use std::{collections::HashSet, sync::Arc};
 
 use anyhow::Context;
 use gix::actor::SignatureRef;
-use serde::{Deserialize, Serialize};
+use rkyv::{Archive, Serialize};
 use yoke::{Yoke, Yokeable};
 
 use crate::database::schema::{
-    commit::Author, prefixes::TAG_FAMILY, repository::RepositoryId, Yoked,
+    commit::{ArchivedAuthor, Author},
+    prefixes::TAG_FAMILY,
+    repository::RepositoryId,
+    Yoked,
 };
 
-#[derive(Serialize, Deserialize, Debug, Yokeable)]
-pub struct Tag<'a> {
-    #[serde(borrow)]
-    pub tagger: Option<Author<'a>>,
+#[derive(Serialize, Archive, Debug, Yokeable)]
+pub struct Tag {
+    pub tagger: Option<Author>,
 }
 
-impl<'a> Tag<'a> {
-    pub fn new(tagger: Option<SignatureRef<'a>>) -> Result<Self, anyhow::Error> {
+impl Tag {
+    pub fn new(tagger: Option<SignatureRef<'_>>) -> Result<Self, anyhow::Error> {
         Ok(Self {
             tagger: tagger.map(TryFrom::try_from).transpose()?,
         })
@@ -32,14 +34,14 @@ pub struct TagTree {
     prefix: RepositoryId,
 }
 
-pub type YokedTag = Yoked<Tag<'static>>;
+pub type YokedTag = Yoked<&'static <Tag as Archive>::Archived>;
 
 impl TagTree {
     pub(super) fn new(db: Arc<rocksdb::DB>, prefix: RepositoryId) -> Self {
         Self { db, prefix }
     }
 
-    pub fn insert(&self, name: &str, value: &Tag<'_>) -> anyhow::Result<()> {
+    pub fn insert(&self, name: &str, value: &Tag) -> anyhow::Result<()> {
         let cf = self
             .db
             .cf_handle(TAG_FAMILY)
@@ -48,7 +50,8 @@ impl TagTree {
         let mut db_name = self.prefix.to_be_bytes().to_vec();
         db_name.extend_from_slice(name.as_ref());
 
-        self.db.put_cf(cf, db_name, bincode::serialize(value)?)?;
+        self.db
+            .put_cf(cf, db_name, rkyv::to_bytes::<rkyv::rancor::Error>(value)?)?;
 
         Ok(())
     }
@@ -103,14 +106,16 @@ impl TagTree {
                 Some((name, value))
             })
             .map(|(name, value)| {
-                let value = Yoke::try_attach_to_cart(value, |data| bincode::deserialize(data))?;
+                let value = Yoke::try_attach_to_cart(value, |data| {
+                    rkyv::access::<_, rkyv::rancor::Error>(data)
+                })?;
                 Ok((name, value))
             })
             .collect::<anyhow::Result<Vec<(String, YokedTag)>>>()?;
 
         res.sort_unstable_by(|a, b| {
-            let a_tagger = a.1.get().tagger.as_ref().map(|v| v.time);
-            let b_tagger = b.1.get().tagger.as_ref().map(|v| v.time);
+            let a_tagger = a.1.get().tagger.as_ref().map(ArchivedAuthor::time);
+            let b_tagger = b.1.get().tagger.as_ref().map(ArchivedAuthor::time);
             b_tagger.cmp(&a_tagger)
         });
 

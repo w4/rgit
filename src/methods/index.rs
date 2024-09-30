@@ -24,6 +24,7 @@ pub async fn handle(
     let fetched = tokio::task::spawn_blocking(move || Repository::fetch_all(&db))
         .await
         .context("Failed to join Tokio task")??;
+
     for (k, v) in fetched {
         // TODO: fixme
         let mut split: Vec<_> = k.split('/').collect();

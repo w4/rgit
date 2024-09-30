@@ -33,7 +33,9 @@ use tokio::{
 use tower_http::{cors::CorsLayer, timeout::TimeoutLayer};
 use tower_layer::layer_fn;
 use tracing::{error, info, instrument, warn};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{
+    fmt::format::FmtSpan, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter,
+};
 use xxhash_rust::const_xxh3;
 
 use crate::{
@@ -122,7 +124,7 @@ async fn main() -> Result<(), anyhow::Error> {
         std::env::set_var("RUST_LOG", "info");
     }
 
-    let logger_layer = tracing_subscriber::fmt::layer();
+    let logger_layer = tracing_subscriber::fmt::layer().with_span_events(FmtSpan::CLOSE);
     let env_filter = EnvFilter::from_default_env();
 
     tracing_subscriber::registry()

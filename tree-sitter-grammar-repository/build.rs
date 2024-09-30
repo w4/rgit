@@ -91,7 +91,7 @@ fn main() -> anyhow::Result<()> {
         }
     }
     fs::write(
-        &out_dir.join("grammar.defs.rs"),
+        out_dir.join("grammar.defs.rs"),
         prettyplease::unparse(
             &syn::parse2(quote!(#(#grammar_defs)*)).context("failed to parse grammar defs")?,
         ),
@@ -100,14 +100,14 @@ fn main() -> anyhow::Result<()> {
 
     let registry = build_grammar_registry(config.grammar.iter().map(|v| v.name.clone()));
     fs::write(
-        &out_dir.join("grammar.registry.rs"),
+        out_dir.join("grammar.registry.rs"),
         prettyplease::unparse(&syn::parse2(registry).context("failed to parse grammar registry")?),
     )
     .context("failed to write grammar registry")?;
 
     let language = build_language_registry(config.language)?;
     fs::write(
-        &out_dir.join("language.registry.rs"),
+        out_dir.join("language.registry.rs"),
         prettyplease::unparse(&syn::parse2(language)?),
     )?;
 
@@ -214,7 +214,7 @@ fn build_language_registry(
 
                 thread_local! {
                     static REGEX: ::std::cell::LazyCell<::regex::RegexSet> = ::std::cell::LazyCell::new(|| {
-                        ::regex::RegexSet::new(&[
+                        ::regex::RegexSet::new([
                             #(#injection_regex),*
                         ])
                         .unwrap()
@@ -433,14 +433,14 @@ fn fetch_and_build_grammar(
 
 fn fetch_git_repository(url: &str, ref_: &str, destination: &Path) -> anyhow::Result<()> {
     if !destination.exists() {
-        let res = Command::new("git").arg("init").arg(&destination).status()?;
+        let res = Command::new("git").arg("init").arg(destination).status()?;
         if !res.success() {
             bail!("git init failed with exit code {res}");
         }
 
         let res = Command::new("git")
-            .args(&["remote", "add", "origin", url])
-            .current_dir(&destination)
+            .args(["remote", "add", "origin", url])
+            .current_dir(destination)
             .status()?;
         if !res.success() {
             bail!("git remote failed with exit code {res}");
@@ -448,8 +448,8 @@ fn fetch_git_repository(url: &str, ref_: &str, destination: &Path) -> anyhow::Re
     }
 
     let res = Command::new("git")
-        .args(&["rev-parse", "HEAD"])
-        .current_dir(&destination)
+        .args(["rev-parse", "HEAD"])
+        .current_dir(destination)
         .output()?
         .stdout;
     if res == ref_.as_bytes() {
@@ -457,16 +457,16 @@ fn fetch_git_repository(url: &str, ref_: &str, destination: &Path) -> anyhow::Re
     }
 
     let res = Command::new("git")
-        .args(&["fetch", "--depth", "1", "origin", ref_])
-        .current_dir(&destination)
+        .args(["fetch", "--depth", "1", "origin", ref_])
+        .current_dir(destination)
         .status()?;
     if !res.success() {
         bail!("git fetch failed with exit code {res}");
     }
 
     let res = Command::new("git")
-        .args(&["reset", "--hard", ref_])
-        .current_dir(&destination)
+        .args(["reset", "--hard", ref_])
+        .current_dir(destination)
         .status()?;
     if !res.success() {
         bail!("git fetch failed with exit code {res}");

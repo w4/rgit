@@ -17,7 +17,7 @@ use tracing::{error, info, info_span, instrument, warn};
 
 use crate::database::schema::{
     commit::Commit,
-    repository::{Repository, RepositoryId},
+    repository::{ArchivedRepository, Repository, RepositoryId},
     tag::{Tag, TagTree},
 };
 
@@ -51,7 +51,9 @@ fn update_repository_metadata(scan_path: &Path, db: &rocksdb::DB) {
         };
 
         let id = match Repository::open(db, relative) {
-            Ok(v) => v.map_or_else(RepositoryId::new, |v| v.get().id),
+            Ok(v) => v.map_or_else(RepositoryId::new, |v| {
+                RepositoryId(v.get().id.0.to_native())
+            }),
             Err(error) => {
                 // maybe we could nuke it ourselves, but we need to instantly trigger
                 // a reindex and we could enter into an infinite loop if there's a bug
@@ -61,11 +63,13 @@ fn update_repository_metadata(scan_path: &Path, db: &rocksdb::DB) {
             }
         };
 
-        let Some(name) = relative.file_name().map(OsStr::to_string_lossy) else {
+        let Some(name) = relative.file_name().and_then(OsStr::to_str) else {
             continue;
         };
         let description = std::fs::read(repository.join("description")).unwrap_or_default();
-        let description = Some(String::from_utf8_lossy(&description)).filter(|v| !v.is_empty());
+        let description = String::from_utf8(description)
+            .ok()
+            .filter(|v| !v.is_empty());
 
         let repository_path = scan_path.join(relative);
 
@@ -81,15 +85,15 @@ fn update_repository_metadata(scan_path: &Path, db: &rocksdb::DB) {
 
         let res = Repository {
             id,
-            name,
+            name: name.to_string(),
             description,
             owner: find_gitweb_owner(repository_path.as_path()),
-            last_modified: find_last_committed_time(&git_repository)
-                .unwrap_or(OffsetDateTime::UNIX_EPOCH),
-            default_branch: find_default_branch(&git_repository)
-                .ok()
-                .flatten()
-                .map(Cow::Owned),
+            last_modified: {
+                let r =
+                    find_last_committed_time(&git_repository).unwrap_or(OffsetDateTime::UNIX_EPOCH);
+                (r.unix_timestamp(), r.offset().whole_seconds())
+            },
+            default_branch: find_default_branch(&git_repository).ok().flatten(),
         }
         .insert(db, relative);
 
@@ -202,7 +206,7 @@ fn update_repository_reflog(scan_path: &Path, db: Arc<rocksdb::DB>) {
 fn branch_index_update(
     reference: &mut Reference<'_>,
     relative_path: &str,
-    db_repository: &Repository<'_>,
+    db_repository: &ArchivedRepository,
     db: Arc<rocksdb::DB>,
     git_repository: &gix::Repository,
     force_reindex: bool,
@@ -218,7 +222,7 @@ fn branch_index_update(
     let commit = reference.peel_to_commit()?;
 
     let latest_indexed = if let Some(latest_indexed) = commit_tree.fetch_latest_one()? {
-        if commit.id().as_bytes() == &*latest_indexed.get().hash {
+        if commit.id().as_bytes() == latest_indexed.get().hash.as_slice() {
             info!("No commits since last index");
             return Ok(());
         }
@@ -246,7 +250,7 @@ fn branch_index_update(
             let rev = rev?;
 
             if let (false, Some(latest_indexed)) = (seen, &latest_indexed) {
-                if rev.id.as_bytes() == &*latest_indexed.get().hash {
+                if rev.id.as_bytes() == latest_indexed.get().hash.as_slice() {
                     seen = true;
                 }
 
@@ -321,7 +325,7 @@ fn update_repository_tags(scan_path: &Path, db: Arc<rocksdb::DB>) {
 #[instrument(skip(db_repository, db, git_repository))]
 fn tag_index_scan(
     relative_path: &str,
-    db_repository: &Repository<'_>,
+    db_repository: &ArchivedRepository,
     db: Arc<rocksdb::DB>,
     git_repository: &gix::Repository,
 ) -> Result<(), anyhow::Error> {
@@ -382,7 +386,7 @@ fn tag_index_delete(tag_name: &str, tag_tree: &TagTree) -> Result<(), anyhow::Er
 fn open_repo<P: AsRef<Path> + Debug>(
     scan_path: &Path,
     relative_path: P,
-    db_repository: &Repository<'_>,
+    db_repository: &ArchivedRepository,
     db: &rocksdb::DB,
 ) -> Option<gix::Repository> {
     match gix::open(scan_path.join(relative_path.as_ref())) {
@@ -435,13 +439,11 @@ fn discover_repositories(current: &Path, discovered_repos: &mut Vec<PathBuf>) {
     }
 }
 
-fn find_gitweb_owner(repository_path: &Path) -> Option<Cow<'_, str>> {
+fn find_gitweb_owner(repository_path: &Path) -> Option<String> {
     // Load the Git config file and attempt to extract the owner from the "gitweb" section.
     // If the owner is not found, an empty string is returned.
     Ini::load_from_file(repository_path.join("config"))
         .ok()?
-        .section(Some("gitweb"))
-        .and_then(|section| section.get("owner"))
-        .map(String::from)
-        .map(Cow::Owned)
+        .section_mut(Some("gitweb"))
+        .and_then(|section| section.remove("owner"))
 }

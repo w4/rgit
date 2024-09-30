@@ -43,13 +43,13 @@
         <td><a href="/{{ repo.display() }}/tag/?h={{ name }}">{{- name -}}</a></td>
         <td><a href="/{{ repo.display() }}/snapshot?h={{ name }}">{{- name -}}.tar.gz</a></td>
         <td>
-            {% if let Some(tagger) = tag.get().tagger -%}
+            {% if let Some(tagger) = tag.get().tagger.as_ref() -%}
             <img src="{{ tagger.email|gravatar }}" width="13" height="13">
             {{ tagger.name }}
             {%- endif %}
         </td>
         <td>
-            {% if let Some(tagger) = tag.get().tagger -%}
+            {% if let Some(tagger) = tag.get().tagger.as_ref() -%}
             <time datetime="{{ tagger.time|format_time }}" title="{{ tagger.time|format_time }}">
                 {{- tagger.time|timeago -}}
             </time>
@@ -75,7 +75,7 @@
     <tr>
         <td>
             <time datetime="{{ commit.committer.time|format_time }}" title="{{ commit.committer.time|format_time }}">
-                {{- commit.committer.time.clone()|timeago -}}
+                {{- commit.committer.time|timeago -}}
             </time>
         </td>
         <td><a href="/{{ repo.display() }}/commit/?id={{ commit.hash|hex }}">{{ commit.summary }}</a></td>

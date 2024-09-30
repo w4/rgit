@@ -1,10 +1,9 @@
-use std::{borrow::Cow, collections::BTreeMap, ops::Deref, path::Path, sync::Arc};
+use std::{collections::BTreeMap, ops::Deref, path::Path, sync::Arc};
 
 use anyhow::{Context, Result};
 use rand::random;
+use rkyv::{Archive, Serialize};
 use rocksdb::IteratorMode;
-use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
 use yoke::{Yoke, Yokeable};
 
 use crate::database::schema::{
@@ -14,30 +13,26 @@ use crate::database::schema::{
     Yoked,
 };
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Hash, Yokeable)]
-pub struct Repository<'a> {
+#[derive(Serialize, Archive, Debug, PartialEq, Eq, Hash, Yokeable)]
+pub struct Repository {
     /// The ID of the repository, as stored in `RocksDB`
     pub id: RepositoryId,
     /// The "clean name" of the repository (ie. `hello-world.git`)
-    #[serde(borrow)]
-    pub name: Cow<'a, str>,
+    pub name: String,
     /// The description of the repository, as it is stored in the `description` file in the
     /// bare repo root
-    #[serde(borrow)]
-    pub description: Option<Cow<'a, str>>,
+    pub description: Option<String>,
     /// The owner of the repository (`gitweb.owner` in the repository configuration)
-    #[serde(borrow)]
-    pub owner: Option<Cow<'a, str>>,
+    pub owner: Option<String>,
     /// The last time this repository was updated, currently read from the directory mtime
-    pub last_modified: OffsetDateTime,
+    pub last_modified: (i64, i32),
     /// The default branch for Git operations
-    #[serde(borrow)]
-    pub default_branch: Option<Cow<'a, str>>,
+    pub default_branch: Option<String>,
 }
 
-pub type YokedRepository = Yoked<Repository<'static>>;
+pub type YokedRepository = Yoked<&'static <Repository as Archive>::Archived>;
 
-impl Repository<'_> {
+impl Repository {
     pub fn exists<P: AsRef<Path>>(database: &rocksdb::DB, path: P) -> Result<bool> {
         let cf = database
             .cf_handle(REPOSITORY_FAMILY)
@@ -53,11 +48,13 @@ impl Repository<'_> {
             .context("repository column family missing")?;
 
         database
-            .full_iterator_cf(cf, IteratorMode::Start)
+            .iterator_cf(cf, IteratorMode::Start)
             .filter_map(Result::ok)
             .map(|(key, value)| {
                 let key = String::from_utf8(key.into_vec()).context("invalid repo name")?;
-                let value = Yoke::try_attach_to_cart(value, |data| bincode::deserialize(data))?;
+                let value = Yoke::try_attach_to_cart(value, |data| {
+                    rkyv::access::<_, rkyv::rancor::Error>(data)
+                })?;
 
                 Ok((key, value))
             })
@@ -70,14 +67,36 @@ impl Repository<'_> {
             .context("repository column family missing")?;
         let path = path.as_ref().to_str().context("invalid path")?;
 
-        database.put_cf(cf, path, bincode::serialize(self)?)?;
+        database.put_cf(cf, path, rkyv::to_bytes::<rkyv::rancor::Error>(self)?)?;
 
         Ok(())
     }
 
+    pub fn open<P: AsRef<Path>>(
+        database: &rocksdb::DB,
+        path: P,
+    ) -> Result<Option<YokedRepository>> {
+        let cf = database
+            .cf_handle(REPOSITORY_FAMILY)
+            .context("repository column family missing")?;
+
+        let path = path.as_ref().to_str().context("invalid path")?;
+        let Some(value) = database.get_cf(cf, path)? else {
+            return Ok(None);
+        };
+
+        Yoke::try_attach_to_cart(value.into_boxed_slice(), |data| {
+            rkyv::access::<_, rkyv::rancor::Error>(data)
+        })
+        .map(Some)
+        .context("Failed to open repository")
+    }
+}
+
+impl ArchivedRepository {
     pub fn delete<P: AsRef<Path>>(&self, database: &rocksdb::DB, path: P) -> Result<()> {
-        let start_id = self.id.to_be_bytes();
-        let mut end_id = self.id.to_be_bytes();
+        let start_id = self.id.0.to_native().to_be_bytes();
+        let mut end_id = start_id;
         *end_id.last_mut().unwrap() += 1;
 
         // delete commits
@@ -102,58 +121,54 @@ impl Repository<'_> {
         Ok(())
     }
 
-    pub fn open<P: AsRef<Path>>(
-        database: &rocksdb::DB,
-        path: P,
-    ) -> Result<Option<YokedRepository>> {
-        let cf = database
-            .cf_handle(REPOSITORY_FAMILY)
-            .context("repository column family missing")?;
-
-        let path = path.as_ref().to_str().context("invalid path")?;
-        let Some(value) = database.get_cf(cf, path)? else {
-            return Ok(None);
-        };
-
-        Yoke::try_attach_to_cart(value.into_boxed_slice(), |data| bincode::deserialize(data))
-            .map(Some)
-            .context("Failed to open repository")
-    }
-
     pub fn commit_tree(&self, database: Arc<rocksdb::DB>, reference: &str) -> CommitTree {
-        CommitTree::new(database, self.id, reference)
+        CommitTree::new(database, RepositoryId(self.id.0.to_native()), reference)
     }
 
     pub fn tag_tree(&self, database: Arc<rocksdb::DB>) -> TagTree {
-        TagTree::new(database, self.id)
+        TagTree::new(database, RepositoryId(self.id.0.to_native()))
     }
 
-    pub fn replace_heads(&self, database: &rocksdb::DB, new_heads: &[String]) -> Result<()> {
+    pub fn replace_heads(&self, database: &rocksdb::DB, new_heads: &Vec<String>) -> Result<()> {
         let cf = database
             .cf_handle(REFERENCE_FAMILY)
             .context("missing reference column family")?;
 
-        database.put_cf(cf, self.id.to_be_bytes(), bincode::serialize(new_heads)?)?;
+        database.put_cf(
+            cf,
+            self.id.0.to_native().to_be_bytes(),
+            rkyv::to_bytes::<rkyv::rancor::Error>(new_heads)?,
+        )?;
 
         Ok(())
     }
 
-    pub fn heads(&self, database: &rocksdb::DB) -> Result<Yoke<Vec<String>, Box<[u8]>>> {
+    #[allow(clippy::type_complexity)]
+    pub fn heads(
+        &self,
+        database: &rocksdb::DB,
+    ) -> Result<Option<Yoke<&'static ArchivedHeads, Box<[u8]>>>> {
         let cf = database
             .cf_handle(REFERENCE_FAMILY)
             .context("missing reference column family")?;
 
-        let Some(bytes) = database.get_cf(cf, self.id.to_be_bytes())? else {
-            return Ok(Yoke::attach_to_cart(Box::default(), |_| vec![]));
+        let Some(bytes) = database.get_cf(cf, self.id.0.to_native().to_be_bytes())? else {
+            return Ok(None);
         };
 
-        Yoke::try_attach_to_cart(Box::from(bytes), |bytes| bincode::deserialize(bytes))
-            .context("failed to deserialize heads")
+        Yoke::try_attach_to_cart(Box::from(bytes), |bytes| {
+            rkyv::access::<_, rkyv::rancor::Error>(bytes)
+        })
+        .context("failed to deserialize heads")
+        .map(Some)
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct RepositoryId(pub(super) u64);
+#[derive(Serialize, Archive, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Heads(pub Vec<String>);
+
+#[derive(Serialize, Archive, Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct RepositoryId(pub u64);
 
 impl RepositoryId {
     pub fn new() -> Self {

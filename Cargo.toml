@@ -20,7 +20,6 @@ axum = { version = "0.7", default-features = false, features = [
   "tokio",
   "http1",
 ] }
-bincode = "1.3"
 bytes = "1.5"
 clap = { version = "4.4.10", default-features = false, features = [
   "std",
@@ -45,10 +44,12 @@ gix = { version = "0.66", default-features = false, features = [
 httparse = "1.7"
 humantime = "2.1"
 itertools = "0.13.0"
+kanal = "0.1.0-pre8"
 md5 = "0.7"
 moka = { version = "0.12.0", features = ["future"] }
 path-clean = "1.0.1"
 rand = "0.8.5"
+rkyv = "0.8"
 rocksdb = { version = "0.22", default-features = false, features = ["snappy"] }
 rust-ini = "0.21.1"
 serde = { version = "1.0", features = ["derive", "rc"] }

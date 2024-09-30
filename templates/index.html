@@ -28,7 +28,7 @@
                 </td>
                 <td>
                     <a href="/{% if let Some(path) = path %}{{ path }}/{% endif %}{{ repository.name }}">
-                        {%- if let Some(description) = repository.description -%}
+                        {%- if let Some(description) = repository.description.as_ref() -%}
                             {{- description -}}
                         {%- else -%}
                             Unnamed repository; edit this file 'description' to name the repository.
@@ -37,7 +37,7 @@
                 </td>
                 <td>
                     <a href="/{% if let Some(path) = path %}{{ path }}/{% endif %}{{ repository.name }}">
-                        {%- if let Some(owner) = repository.owner -%}
+                        {%- if let Some(owner) = repository.owner.as_ref() -%}
                             {{- owner -}}
                         {%- endif -%}
                     </a>
@@ -45,7 +45,7 @@
                 <td>
                     <a href="/{% if let Some(path) = path %}{{ path }}/{% endif %}{{ repository.name }}">
                         <time datetime="{{ repository.last_modified|format_time }}" title="{{ repository.last_modified|format_time }}">
-                            {{- repository.last_modified.clone()|timeago -}}
+                            {{- repository.last_modified|timeago -}}
                         </time>
                     </a>
                 </td>

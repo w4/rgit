@@ -125,6 +125,7 @@ fn build_language_registry(
 
     let mut injection_regex = Vec::new();
     let mut injection_regex_str_len = Vec::new();
+    let mut regex_to_camel = Vec::new();
 
     for language in &language_definition {
         if BLACKLISTED_MODULES.contains(&language.name.as_str()) {
@@ -150,8 +151,9 @@ fn build_language_registry(
         }
 
         if let Some(regex) = language.injection_regex.as_deref() {
-            injection_regex.push(regex);
+            injection_regex.push(format!("^{regex}$"));
             injection_regex_str_len.push(regex.len());
+            regex_to_camel.push(camel_cased_name.clone());
         }
     }
 
@@ -208,6 +210,7 @@ fn build_language_registry(
 
             pub fn from_injection(name: &str) -> Option<Self> {
                 const LENGTHS: [usize; #injection_regex_len] = [#(#injection_regex_str_len),*];
+                const REGEX_TO_VARIANT: [Language; #injection_regex_len] = [#(Language::#regex_to_camel),*];
 
                 thread_local! {
                     static REGEX: ::std::cell::LazyCell<::regex::RegexSet> = ::std::cell::LazyCell::new(|| {
@@ -227,7 +230,7 @@ fn build_language_registry(
 
                         if curr_length < max {
                             max = curr_length;
-                            curr = Some(Self::VARIANTS[m]);
+                            curr = Some(REGEX_TO_VARIANT[m]);
                         }
                     }
                 });

@@ -8,7 +8,7 @@ use std::{
 };
 
 use comrak::adapters::SyntaxHighlighterAdapter;
-use tracing::debug;
+use tracing::{debug, error};
 use tree_sitter_grammar_repository::{Grammar, Language};
 use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
 
@@ -194,10 +194,30 @@ pub fn format_file_inner(
     };
 
     HIGHLIGHTER.with_borrow_mut(|highlighter| {
-        let mut spans = highlighter.highlight(config, content.as_bytes(), None, |injection| {
+        highlighter.parser().reset();
+
+        let spans = highlighter.highlight(config, content.as_bytes(), None, |injection| {
             debug!(injection, "Highlighter switch requested");
             fetch_highlighter_config_by_token(injection)
-        })?;
+        });
+
+        let mut spans = match spans {
+            Ok(v) => v,
+            Err(error) => {
+                error!(
+                    ?error,
+                    "Failed to run highlighter, falling back to plaintext"
+                );
+
+                for line in content.lines() {
+                    out.push_str(line_prefix);
+                    v_htmlescape::b_escape(line.as_bytes(), out);
+                    out.push_str(line_suffix);
+                }
+
+                return Ok(());
+            }
+        };
 
         let mut tag_open = true;
         out.push_str(line_prefix);

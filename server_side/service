@@ -1,0 +1,12 @@
+[Unit]
+Description=gitweb/cgit interface
+
+[Service]
+User=git
+EnvironmentFile=/etc/default/rgit
+ExecStartPre=/usr/bin/rgit_pre_flight_check
+ExecStart=/usr/bin/rgit ${RGIT_SHIM} ${RGIT_CACHE} ${RGIT_BIND} ${RGIT_PATH}
+#Wish: just 'ExecStart=/usr/bin/rgit'
+
+[Install]
+WantedBy=multi-user.target

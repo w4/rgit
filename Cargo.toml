@@ -31,11 +31,10 @@ clap = { version = "4.4.10", default-features = false, features = [
 comrak = { version = "0.28.0", default-features = false }
 const-hex = "1.12"
 const_format = "0.2"
-flate2 = { version = "1.0", default-features = false, features = ["zlib-ng"] }
+flate2 = "1.0"
 futures-util = "0.3"
 gix = { version = "0.66", default-features = false, features = [
   "fast-sha1",
-  "zlib-ng",
   "tracing",
   "parallel",
   "blob-diff",

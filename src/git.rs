@@ -1,15 +1,3 @@
-use std::{
-    borrow::Cow,
-    collections::{BTreeMap, VecDeque},
-    ffi::OsStr,
-    fmt::{self, Arguments, Write},
-    io::ErrorKind,
-    path::{Path, PathBuf},
-    str::FromStr,
-    sync::Arc,
-    time::Duration,
-};
-
 use anyhow::{anyhow, Context, Result};
 use axum::response::IntoResponse;
 use bytes::{buf::Writer, BufMut, Bytes, BytesMut};
@@ -26,7 +14,19 @@ use gix::{
     url::Scheme,
     ObjectId, ThreadSafeRepository, Url,
 };
+use itertools::Itertools;
 use moka::future::Cache;
+use std::borrow::Cow;
+use std::{
+    collections::{BTreeMap, VecDeque},
+    ffi::OsStr,
+    fmt::{self, Arguments, Write},
+    io::ErrorKind,
+    path::{Path, PathBuf},
+    str::FromStr,
+    sync::Arc,
+    time::Duration,
+};
 use tar::Builder;
 use time::{OffsetDateTime, UtcOffset};
 use tracing::{error, instrument, warn};
@@ -198,7 +198,7 @@ impl OpenRepository {
                     | EntryKind::Blob
                     | EntryKind::BlobExecutable
                     | EntryKind::Link => {
-                        let object = item
+                        let mut object = item
                             .object()
                             .context("Expected item in tree to be object but it wasn't")?;
 
@@ -209,11 +209,36 @@ impl OpenRepository {
                                 path,
                                 name: item.filename().to_string(),
                             }),
-                            Kind::Tree => TreeItem::Tree(Tree {
-                                mode: item.mode().0,
-                                path,
-                                name: item.filename().to_string(),
-                            }),
+                            Kind::Tree => {
+                                let mut children = PathBuf::new();
+
+                                // if the tree only has one child, flatten it down
+                                while let Ok(Some(Ok(item))) = object
+                                    .try_into_tree()
+                                    .iter()
+                                    .map(gix::Tree::iter)
+                                    .flatten()
+                                    .at_most_one()
+                                {
+                                    let nested_object = item.object().context(
+                                        "Expected item in tree to be object but it wasn't",
+                                    )?;
+
+                                    if nested_object.kind != Kind::Tree {
+                                        break;
+                                    }
+
+                                    object = nested_object;
+                                    children.push(item.filename().to_path_lossy());
+                                }
+
+                                TreeItem::Tree(Tree {
+                                    mode: item.mode().0,
+                                    path,
+                                    children,
+                                    name: item.filename().to_string(),
+                                })
+                            }
                             _ => continue,
                         });
                     }
@@ -602,6 +627,7 @@ pub struct Submodule {
 pub struct Tree {
     pub mode: u16,
     pub name: String,
+    pub children: PathBuf,
     pub path: PathBuf,
 }
 

@@ -5,6 +5,7 @@ use std::{
 
 use askama::Template;
 use axum::{extract::Query, response::IntoResponse, Extension};
+use itertools::Itertools;
 use serde::Deserialize;
 
 use crate::{

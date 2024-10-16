@@ -1,12 +1,12 @@
-use std::{
-    fmt::{Display, Formatter},
-    sync::Arc,
-};
-
 use askama::Template;
 use axum::{extract::Query, response::IntoResponse, Extension};
 use itertools::Itertools;
 use serde::Deserialize;
+use std::path::PathBuf;
+use std::{
+    fmt::{Display, Formatter},
+    sync::Arc,
+};
 
 use crate::{
     git::{FileWithContent, PathDestination, TreeItem},
@@ -51,6 +51,7 @@ pub struct TreeView {
     pub repo: Repository,
     pub items: Vec<TreeItem>,
     pub query: UriQuery,
+    pub repo_path: PathBuf,
     pub branch: Option<Arc<str>>,
 }
 
@@ -58,6 +59,7 @@ pub struct TreeView {
 #[template(path = "repo/file.html")]
 pub struct FileView {
     pub repo: Repository,
+    pub repo_path: PathBuf,
     pub file: FileWithContent,
     pub branch: Option<Arc<str>>,
 }
@@ -73,7 +75,7 @@ pub async fn handle(
 
     Ok(
         match open_repo
-            .path(child_path, query.id.as_deref(), !query.raw)
+            .path(child_path.clone(), query.id.as_deref(), !query.raw)
             .await?
         {
             PathDestination::Tree(items) => {
@@ -82,6 +84,7 @@ pub async fn handle(
                     items,
                     branch: query.branch.clone(),
                     query,
+                    repo_path: child_path.unwrap_or_default(),
                 })))
             }
             PathDestination::File(file) if query.raw => ResponseEither::Right(file.content),
@@ -90,6 +93,7 @@ pub async fn handle(
                     repo,
                     file,
                     branch: query.branch,
+                    repo_path: child_path.unwrap_or_default(),
                 })))
             }
         },

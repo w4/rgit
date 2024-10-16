@@ -1,6 +1,11 @@
+{% import "macros/breadcrumbs.html" as breadcrumbs %}
 {% extends "repo/base.html" %}
 
 {% block tree_nav_class %}active{% endblock %}
+
+{% block subnav %}
+    {% call breadcrumbs::breadcrumbs(repo_path, query) %}
+{% endblock %}
 
 {% block content %}
 <div class="table-responsive">

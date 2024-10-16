@@ -58,6 +58,15 @@ nav {
   }
 }
 
+aside {
+  background: #f7f7f7;
+  padding: 0.3rem 2rem;
+
+  @media (prefers-color-scheme: dark) {
+    background: #111;
+  }
+}
+
 main {
   padding: 2rem;
   margin: 0;

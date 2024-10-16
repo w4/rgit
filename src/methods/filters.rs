@@ -24,6 +24,14 @@ pub fn format_time(s: impl Into<Timestamp>) -> Result<String, askama::Error> {
         .map_err(askama::Error::Custom)
 }
 
+pub fn branch_query(branch: Option<&str>) -> String {
+    if let Some(b) = branch {
+        format!("?h={b}")
+    } else {
+        String::new()
+    }
+}
+
 pub fn timeago(s: impl Into<Timestamp>) -> Result<String, askama::Error> {
     Ok(timeago::Formatter::new()
         .convert((OffsetDateTime::now_utc() - s.into().0).try_into().unwrap()))

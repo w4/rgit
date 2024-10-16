@@ -1,4 +1,5 @@
 {% import "macros/link.html" as link %}
+{% import "macros/breadcrumbs.html" as breadcrumbs %}
 {% extends "repo/base.html" %}
 
 {% block head %}
@@ -7,6 +8,10 @@
 {%- endblock %}
 
 {% block tree_nav_class %}active{% endblock %}
+
+{% block subnav %}
+    {% call breadcrumbs::breadcrumbs(repo_path, filters::branch_query(branch.as_deref())) %}
+{% endblock %}
 
 {% block extra_nav_links %}
     <a href="?raw=true{% call link::maybe_branch_suffix(branch) %}">plain</a>

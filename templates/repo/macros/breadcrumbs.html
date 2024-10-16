@@ -1,0 +1,11 @@
+{%- macro breadcrumbs(repo_path, query) -%}
+    path:&nbsp;
+    <a href="/{{ repo.display() }}/tree/{{ query }}">{{ repo.display() }}</a>
+    {%- for child in repo_path.ancestors().collect_vec().into_iter().rev() -%}
+        {%- if let Some(file_name) = child.file_name() -%}
+            /<a href="/{{ repo.display() }}/tree/{{ child.display() }}{{ query }}">
+                {{- file_name.to_string_lossy() -}}
+            </a>
+        {%- endif -%}
+    {%- endfor -%}
+{%- endmacro -%}

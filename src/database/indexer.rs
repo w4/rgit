@@ -1,5 +1,4 @@
 use std::{
-    borrow::Cow,
     collections::HashSet,
     ffi::OsStr,
     fmt::Debug,

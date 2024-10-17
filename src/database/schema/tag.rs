@@ -34,6 +34,7 @@ pub struct TagTree {
     prefix: RepositoryId,
 }
 
+pub type YokedString = Yoked<&'static str>;
 pub type YokedTag = Yoked<&'static <Tag as Archive>::Archived>;
 
 impl TagTree {
@@ -88,7 +89,7 @@ impl TagTree {
             .collect())
     }
 
-    pub fn fetch_all(&self) -> anyhow::Result<Vec<(String, YokedTag)>> {
+    pub fn fetch_all(&self) -> anyhow::Result<Vec<(YokedString, YokedTag)>> {
         let cf = self
             .db
             .cf_handle(TAG_FAMILY)
@@ -99,9 +100,15 @@ impl TagTree {
             .prefix_iterator_cf(cf, self.prefix.to_be_bytes())
             .filter_map(Result::ok)
             .filter_map(|(name, value)| {
-                let name = String::from_utf8_lossy(name.strip_prefix(&self.prefix.to_be_bytes())?)
-                    .strip_prefix("refs/tags/")?
-                    .to_string();
+                let name = Yoke::try_attach_to_cart(name, |data| {
+                    let data = data
+                        .strip_prefix(&self.prefix.to_be_bytes())
+                        .ok_or(())?
+                        .strip_prefix(b"refs/tags/")
+                        .ok_or(())?;
+                    simdutf8::basic::from_utf8(data).map_err(|_| ())
+                })
+                .ok()?;
 
                 Some((name, value))
             })
@@ -111,7 +118,7 @@ impl TagTree {
                 })?;
                 Ok((name, value))
             })
-            .collect::<anyhow::Result<Vec<(String, YokedTag)>>>()?;
+            .collect::<anyhow::Result<Vec<(YokedString, YokedTag)>>>()?;
 
         res.sort_unstable_by(|a, b| {
             let a_tagger = a.1.get().tagger.as_ref().map(ArchivedAuthor::time);

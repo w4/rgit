@@ -1,10 +1,5 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use anyhow::Context;
-use askama::Template;
-use axum::{response::IntoResponse, Extension};
-use rkyv::string::ArchivedString;
-
 use crate::{
     into_response,
     methods::{
@@ -12,6 +7,11 @@ use crate::{
         repo::{Refs, Repository, Result},
     },
 };
+use anyhow::Context;
+use askama::Template;
+use axum::{response::IntoResponse, Extension};
+use rkyv::string::ArchivedString;
+use yoke::Yoke;
 
 #[derive(Template)]
 #[template(path = "repo/refs.html")]
@@ -28,17 +28,20 @@ pub async fn handle(
     tokio::task::spawn_blocking(move || {
         let repository = crate::database::schema::repository::Repository::open(&db, &*repo)?
             .context("Repository does not exist")?;
+        let repository = repository.get();
+
+        let heads_db = repository.heads(&db)?;
+        let heads_db = heads_db.as_ref().map(Yoke::get);
 
         let mut heads = BTreeMap::new();
-        if let Some(heads_db) = repository.get().heads(&db)? {
-            for head in heads_db
-                .get()
+        if let Some(archived_heads) = heads_db {
+            for head in archived_heads
                 .0
                 .as_slice()
                 .iter()
                 .map(ArchivedString::as_str)
             {
-                let commit_tree = repository.get().commit_tree(db.clone(), head);
+                let commit_tree = repository.commit_tree(db.clone(), head);
                 let name = head.strip_prefix("refs/heads/");
 
                 if let (Some(name), Some(commit)) = (name, commit_tree.fetch_latest_one()?) {
@@ -47,7 +50,7 @@ pub async fn handle(
             }
         }
 
-        let tags = repository.get().tag_tree(db).fetch_all()?;
+        let tags = repository.tag_tree(db).fetch_all()?;
 
         Ok(into_response(View {
             repo,

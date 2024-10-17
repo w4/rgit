@@ -40,8 +40,8 @@
     <tbody>
     {% for (name, tag) in tags -%}
     <tr>
-        <td><a href="/{{ repo.display() }}/tag/?h={{ name }}">{{- name -}}</a></td>
-        <td><a href="/{{ repo.display() }}/snapshot?h={{ name }}">{{- name -}}.tar.gz</a></td>
+        <td><a href="/{{ repo.display() }}/tag/?h={{ name.get() }}">{{- name.get() -}}</a></td>
+        <td><a href="/{{ repo.display() }}/snapshot?h={{ name.get() }}">{{- name.get() -}}.tar.gz</a></td>
         <td>
             {% if let Some(tagger) = tag.get().tagger.as_ref() -%}
             <img src="{{ tagger.email|gravatar }}" width="13" height="13">

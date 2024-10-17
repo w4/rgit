@@ -166,7 +166,7 @@ impl CommitTree {
         };
 
         Yoke::try_attach_to_cart(Box::from(value), |value| {
-            rkyv::access::<_, rkyv::rancor::Error>(&value)
+            rkyv::access::<_, rkyv::rancor::Error>(value)
         })
         .context("Failed to deserialize commit")
         .map(Some)

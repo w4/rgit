@@ -37,6 +37,7 @@ use self::{
     tag::handle as handle_tag,
     tree::handle as handle_tree,
 };
+use crate::database::schema::tag::YokedString;
 use crate::{
     database::schema::{commit::YokedCommit, tag::YokedTag},
     layers::UnwrapInfallible,
@@ -192,5 +193,5 @@ impl IntoResponse for Error {
 
 pub struct Refs {
     heads: BTreeMap<String, YokedCommit>,
-    tags: Vec<(String, YokedTag)>,
+    tags: Vec<(YokedString, YokedTag)>,
 }

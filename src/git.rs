@@ -216,8 +216,7 @@ impl OpenRepository {
                                 while let Ok(Some(Ok(item))) = object
                                     .try_into_tree()
                                     .iter()
-                                    .map(gix::Tree::iter)
-                                    .flatten()
+                                    .flat_map(gix::Tree::iter)
                                     .at_most_one()
                                 {
                                     let nested_object = item.object().context(

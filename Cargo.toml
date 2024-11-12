@@ -79,9 +79,13 @@ v_htmlescape = { version = "0.15", features = ["bytes-buf"] }
 xxhash-rust = { version = "0.8.12", features = ["const_xxh3"] }
 yoke = { version = "0.7.1", features = ["derive"] }
 
+[features]
+zlib-ng = ["flate2/zlib-ng", "gix/zlib-ng"]
+
 [build-dependencies]
 anyhow = "1.0"
 rsass = "0.28.0"
 
 [package.metadata.deb]
 section = "web"
+

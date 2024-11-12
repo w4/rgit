@@ -40,7 +40,7 @@ gix = { version = "0.66", default-features = false, features = [
   "blob-diff",
   "revision",
 ] }
-httparse = "1.7"
+httparse = "1.9"
 humantime = "2.1"
 itertools = "0.13.0"
 kanal = "0.1.0-pre8"

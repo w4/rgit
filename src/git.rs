@@ -817,7 +817,9 @@ fn fetch_diff_and_stats(
     let mut resource_cache = repo.diff_resource_cache_for_tree_diff()?;
 
     let mut changes = parent_tree.changes()?;
-    changes.track_path().track_rewrites(None);
+    changes.options(|opts| {
+        opts.track_path().track_rewrites(None);
+    });
     changes.for_each_to_obtain_tree_with_cache(
         &current_tree,
         &mut repo.diff_resource_cache_for_tree_diff()?,
@@ -828,7 +830,7 @@ fn fetch_diff_and_stats(
                     resource_cache: &mut resource_cache,
                     diffs: &mut diffs,
                     formatter: SyntaxHighlightedDiffFormatter::new(
-                        change.location.to_path().unwrap(),
+                        change.location().to_path().unwrap(),
                     ),
                 }
                 .handle(change)
@@ -949,12 +951,12 @@ impl<'a, F: DiffFormatter + Callback> DiffBuilder<'a, F> {
         &mut self,
         change: gix::object::tree::diff::Change<'_, '_, '_>,
     ) -> Result<gix::object::tree::diff::Action> {
-        if !change.event.entry_mode().is_blob_or_symlink() {
+        if !change.entry_mode().is_blob_or_symlink() {
             return Ok(gix::object::tree::diff::Action::Continue);
         }
 
         let mut diff = FileDiff {
-            path: change.location.to_string(),
+            path: change.location().to_string(),
             insertions: 0,
             deletions: 0,
         };

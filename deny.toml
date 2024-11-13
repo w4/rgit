@@ -11,17 +11,17 @@ ignore = []
 
 [licenses]
 allow = [
-    "MIT",
-    "Apache-2.0",
-    "Unicode-3.0",
-    "Unicode-DFS-2016",
-    "WTFPL",
-    "BSL-1.0",
-    "CC0-1.0",
-    "BSD-3-Clause",
-    "ISC",
-    "Zlib",
-    "BSD-2-Clause",
+  "MIT",
+  "Apache-2.0",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+  "WTFPL",
+  "BSL-1.0",
+  "CC0-1.0",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "BSD-2-Clause",
 ]
 confidence-threshold = 0.8
 exceptions = []
@@ -35,12 +35,11 @@ external-default-features = "allow"
 allow = []
 deny = []
 skip = [
-    { crate = "sync_wrapper@0.1.2", reason = "tower has not upgraded to 1.0 yet" },
-    { crate = "windows-sys@0.52.0", reason = "gix pulls in two separate versions" },
-    { crate = "hashbrown@0.14.5", reason = "gix has not upgraded their version of dashmap" },
+  { crate = "sync_wrapper@0.1.2", reason = "tower has not upgraded to 1.0 yet" },
+  { crate = "windows-sys@0.52.0", reason = "gix pulls in two separate versions" },
 ]
 skip-tree = [
-    { name = "matchers", reason = "tracing-subscriber's env-filter pulls in an ancient regex version" }
+  { name = "matchers", reason = "tracing-subscriber's env-filter pulls in an ancient regex version" },
 ]
 
 [sources]
@@ -48,4 +47,3 @@ unknown-registry = "warn"
 unknown-git = "warn"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = []
-

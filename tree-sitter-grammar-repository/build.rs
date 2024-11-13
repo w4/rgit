@@ -44,7 +44,7 @@ fn main() -> anyhow::Result<()> {
     };
 
     let (config, query_path) = if dylib {
-        let config: HelixLanguages = toml::from_str(
+        let config: HelixLanguages = basic_toml::from_str(
             &fs::read_to_string(root.join("languages.toml"))
                 .context("failed to read languages.toml")?,
         )
@@ -70,11 +70,19 @@ fn main() -> anyhow::Result<()> {
         fetch_git_repository(GRAMMAR_REPOSITORY_URL, GRAMMAR_REPOSITORY_REF, &helix_root)
             .context(GRAMMAR_REPOSITORY_URL)?;
 
-        let config: HelixLanguages = toml::from_str(
-            &fs::read_to_string(helix_root.join(GRAMMAR_REPOSITORY_CONFIG_PATH))
-                .context("failed to read helix languages.toml")?,
-        )
-        .context("failed to parse helix languages.toml")?;
+        let config = fs::read_to_string(helix_root.join(GRAMMAR_REPOSITORY_CONFIG_PATH))
+            .context("failed to read helix languages.toml")?;
+
+        // find the start of the language arrays & skip parsing everything before them (primarily because
+        // `basic_toml` can't handle some of the new syntax used in this file, and `toml` pulls in a lot
+        // of dependencies)
+        let language_defs_start = memchr::memmem::find(config.as_bytes(), b"[[language]]")
+            .context("languages.toml is missing languages")?;
+
+        let config = &config[language_defs_start..];
+
+        let config: HelixLanguages =
+            basic_toml::from_str(config).context("failed to parse helix languages.toml")?;
 
         fetch_and_build_grammar(config.grammar.clone(), &sources)?;
 

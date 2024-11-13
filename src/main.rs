@@ -138,7 +138,7 @@ async fn main() -> Result<(), anyhow::Error> {
         run_indexer(db.clone(), args.scan_path.clone(), args.refresh_interval);
 
     let css = {
-        let theme = toml::from_str::<Theme>(include_str!("../themes/github_light.toml"))
+        let theme = basic_toml::from_str::<Theme>(include_str!("../themes/github_light.toml"))
             .unwrap()
             .build_css();
         let css = Box::leak(
@@ -151,7 +151,7 @@ async fn main() -> Result<(), anyhow::Error> {
     };
 
     let dark_css = {
-        let theme = toml::from_str::<Theme>(include_str!("../themes/onedark.toml"))
+        let theme = basic_toml::from_str::<Theme>(include_str!("../themes/onedark.toml"))
             .unwrap()
             .build_css();
         let css = Box::leak(
@@ -241,7 +241,13 @@ fn open_db(args: &Args) -> Result<Arc<rocksdb::DB>, anyhow::Error> {
         let mut commit_family_options = Options::default();
         commit_family_options.set_prefix_extractor(SliceTransform::create(
             "commit_prefix",
-            |input| input.split(|&c| c == b'\0').next().unwrap_or(input),
+            |input| {
+                if let Some(offset) = memchr::memchr(b'\0', input) {
+                    &input[offset + 1..]
+                } else {
+                    input
+                }
+            },
             None,
         ));
 

@@ -39,9 +39,14 @@ use crate::{
 type ReadmeCacheKey = (PathBuf, Option<Arc<str>>);
 
 pub struct Git {
-    commits: Cache<(ObjectId, bool), Arc<Commit>>,
-    readme_cache: Cache<ReadmeCacheKey, Option<(ReadmeFormat, Arc<str>)>>,
-    open_repositories: Cache<PathBuf, ThreadSafeRepository>,
+    commits: Cache<(ObjectId, bool), Arc<Commit>, hashbrown::hash_map::DefaultHashBuilder>,
+    readme_cache: Cache<
+        ReadmeCacheKey,
+        Option<(ReadmeFormat, Arc<str>)>,
+        hashbrown::hash_map::DefaultHashBuilder,
+    >,
+    open_repositories:
+        Cache<PathBuf, ThreadSafeRepository, hashbrown::hash_map::DefaultHashBuilder>,
 }
 
 impl Git {
@@ -51,15 +56,15 @@ impl Git {
             commits: Cache::builder()
                 .time_to_live(Duration::from_secs(30))
                 .max_capacity(100)
-                .build(),
+                .build_with_hasher(hashbrown::hash_map::DefaultHashBuilder::default()),
             readme_cache: Cache::builder()
                 .time_to_live(Duration::from_secs(30))
                 .max_capacity(100)
-                .build(),
+                .build_with_hasher(hashbrown::hash_map::DefaultHashBuilder::default()),
             open_repositories: Cache::builder()
                 .time_to_idle(Duration::from_secs(120))
                 .max_capacity(100)
-                .build(),
+                .build_with_hasher(hashbrown::hash_map::DefaultHashBuilder::default()),
         }
     }
 }

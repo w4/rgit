@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    fmt::{Formatter, Write},
-};
+use std::fmt::{Formatter, Write};
 
 use serde::{
     de::{value::MapAccessDeserializer, Error, MapAccess, Visitor},
@@ -10,9 +7,9 @@ use serde::{
 
 #[derive(Deserialize)]
 pub struct Theme {
-    palette: HashMap<String, String>,
+    palette: hashbrown::HashMap<String, String>,
     #[serde(flatten)]
-    definitions: HashMap<String, PaletteReference>,
+    definitions: hashbrown::HashMap<String, PaletteReference>,
 }
 
 pub enum PaletteReference {

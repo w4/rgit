@@ -3,7 +3,6 @@
 
 use std::{
     borrow::Borrow,
-    collections::HashMap,
     sync::{Arc, LazyLock},
 };
 
@@ -46,8 +45,8 @@ pub fn hex(s: &[u8]) -> Result<String, askama::Error> {
 }
 
 pub fn gravatar(email: &str) -> Result<&'static str, askama::Error> {
-    static CACHE: LazyLock<ArcSwap<HashMap<&'static str, &'static str>>> =
-        LazyLock::new(|| ArcSwap::new(Arc::new(HashMap::new())));
+    static CACHE: LazyLock<ArcSwap<hashbrown::HashMap<&'static str, &'static str>>> =
+        LazyLock::new(|| ArcSwap::new(Arc::new(hashbrown::HashMap::new())));
 
     if let Some(res) = CACHE.load().get(email).copied() {
         return Ok(res);

@@ -44,11 +44,19 @@ fn main() -> anyhow::Result<()> {
     };
 
     let (config, query_path) = if dylib {
-        let config: HelixLanguages = basic_toml::from_str(
-            &fs::read_to_string(root.join("languages.toml"))
-                .context("failed to read languages.toml")?,
-        )
-        .context("failed to parse helix languages.toml")?;
+        let config = fs::read_to_string(root.join("languages.toml"))
+            .context("failed to read helix languages.toml")?;
+
+        // find the start of the language arrays & skip parsing everything before them (primarily because
+        // `basic_toml` can't handle some of the new syntax used in this file, and `toml` pulls in a lot
+        // of dependencies)
+        let language_defs_start = memchr::memmem::find(config.as_bytes(), b"[[language]]")
+            .context("languages.toml is missing languages")?;
+
+        let config = &config[language_defs_start..];
+
+        let config: HelixLanguages =
+            basic_toml::from_str(config).context("failed to parse helix languages.toml")?;
 
         println!("cargo::rustc-link-search=native={}", root.display());
 

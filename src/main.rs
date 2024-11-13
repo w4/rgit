@@ -241,13 +241,7 @@ fn open_db(args: &Args) -> Result<Arc<rocksdb::DB>, anyhow::Error> {
         let mut commit_family_options = Options::default();
         commit_family_options.set_prefix_extractor(SliceTransform::create(
             "commit_prefix",
-            |input| {
-                if let Some(offset) = memchr::memchr(b'\0', input) {
-                    &input[offset + 1..]
-                } else {
-                    input
-                }
-            },
+            |input| memchr::memchr(b'\0', input).map_or(input, |idx| &input[..idx]),
             None,
         ));
 

@@ -859,7 +859,7 @@ fn fetch_diff_and_stats(
                 (
                     max_file_name_length.max(stats.path.len()),
                     max_change_length
-                        .max(((stats.insertions + stats.deletions).ilog10() + 1) as usize),
+                        .max(((stats.insertions + stats.deletions + 1).ilog10() + 1) as usize),
                     files_changed + 1,
                     insertions + stats.insertions,
                     deletions + stats.deletions,

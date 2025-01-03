@@ -18,12 +18,11 @@ use std::{
 
 use axum::{
     body::Body,
-    handler::HandlerWithoutStateExt,
+    handler::Handler,
     http::{Request, StatusCode},
     response::{IntoResponse, Response},
 };
 use path_clean::PathClean;
-use tower::{util::BoxCloneService, Service};
 
 use self::{
     about::handle as handle_about,
@@ -38,10 +37,7 @@ use self::{
     tree::handle as handle_tree,
 };
 use crate::database::schema::tag::YokedString;
-use crate::{
-    database::schema::{commit::YokedCommit, tag::YokedTag},
-    layers::UnwrapInfallible,
-};
+use crate::database::schema::{commit::YokedCommit, tag::YokedTag};
 
 pub const DEFAULT_BRANCHES: [&str; 2] = ["refs/heads/master", "refs/heads/main"];
 
@@ -53,64 +49,11 @@ pub async fn service(mut request: Request<Body>) -> Response {
         .get::<Arc<PathBuf>>()
         .expect("scan_path missing");
 
-    let mut child_path = None;
-
-    macro_rules! h {
-        ($handler:ident) => {
-            BoxCloneService::new($handler.into_service())
-        };
-    }
-
-    let uri = request.uri().path().trim_matches('/');
-    let mut uri_parts = memchr::memchr_iter(b'/', uri.as_bytes());
-
-    let original_uri = uri;
-    let (action, mut uri) = if let Some(idx) = uri_parts.next_back() {
-        (uri.get(idx + 1..), &uri[..idx])
-    } else {
-        (None, uri)
-    };
-
-    let mut service = match action {
-        Some("about") => h!(handle_about),
-        Some("git-upload-pack") => h!(handle_smart_git),
-        Some("refs") => {
-            if let Some(idx) = uri_parts.next_back() {
-                if uri.get(idx + 1..) == Some("info") {
-                    uri = &uri[..idx];
-                    h!(handle_smart_git)
-                } else {
-                    h!(handle_refs)
-                }
-            } else {
-                h!(handle_refs)
-            }
-        }
-        Some("log") => h!(handle_log),
-        Some("tree") => h!(handle_tree),
-        Some("commit") => h!(handle_commit),
-        Some("diff") => h!(handle_diff),
-        Some("patch") => h!(handle_patch),
-        Some("tag") => h!(handle_tag),
-        Some("snapshot") => h!(handle_snapshot),
-        Some(_) => {
-            static TREE_FINDER: LazyLock<memchr::memmem::Finder> =
-                LazyLock::new(|| memchr::memmem::Finder::new(b"/tree/"));
-
-            uri = original_uri;
-
-            // match tree children
-            if let Some(idx) = TREE_FINDER.find(uri.as_bytes()) {
-                // 6 is the length of /tree/
-                child_path = Some(Path::new(&uri[idx + 6..]).clean());
-                uri = &uri[..idx];
-                h!(handle_tree)
-            } else {
-                h!(handle_summary)
-            }
-        }
-        None => h!(handle_summary),
-    };
+    let ParsedUri {
+        uri,
+        child_path,
+        action,
+    } = parse_uri(request.uri().path().trim_matches('/'));
 
     let uri = Path::new(uri).clean();
     let path = scan_path.join(&uri);
@@ -129,11 +72,150 @@ pub async fn service(mut request: Request<Body>) -> Response {
     request.extensions_mut().insert(Repository(uri));
     request.extensions_mut().insert(RepositoryPath(path));
 
-    service
-        .call(request)
-        .await
-        .unwrap_infallible()
-        .into_response()
+    match action {
+        HandlerAction::About => handle_about.call(request, None::<()>).await,
+        HandlerAction::SmartGit => handle_smart_git.call(request, None::<()>).await,
+        HandlerAction::Refs => handle_refs.call(request, None::<()>).await,
+        HandlerAction::Log => handle_log.call(request, None::<()>).await,
+        HandlerAction::Tree => handle_tree.call(request, None::<()>).await,
+        HandlerAction::Commit => handle_commit.call(request, None::<()>).await,
+        HandlerAction::Diff => handle_diff.call(request, None::<()>).await,
+        HandlerAction::Patch => handle_patch.call(request, None::<()>).await,
+        HandlerAction::Tag => handle_tag.call(request, None::<()>).await,
+        HandlerAction::Snapshot => handle_snapshot.call(request, None::<()>).await,
+        HandlerAction::Summary => handle_summary.call(request, None::<()>).await,
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct ParsedUri<'a> {
+    action: HandlerAction,
+    uri: &'a str,
+    child_path: Option<PathBuf>,
+}
+
+fn parse_uri(uri: &str) -> ParsedUri<'_> {
+    let mut uri_parts = memchr::memchr_iter(b'/', uri.as_bytes());
+
+    let original_uri = uri;
+    let (action, mut uri) = if let Some(idx) = uri_parts.next_back() {
+        (uri.get(idx + 1..), &uri[..idx])
+    } else {
+        (None, uri)
+    };
+
+    match action {
+        Some("about") => ParsedUri {
+            action: HandlerAction::About,
+            uri,
+            child_path: None,
+        },
+        Some("git-upload-pack") => ParsedUri {
+            action: HandlerAction::SmartGit,
+            uri,
+            child_path: None,
+        },
+        Some("refs") => {
+            if let Some(idx) = uri_parts.next_back() {
+                if uri.get(idx + 1..) == Some("info") {
+                    ParsedUri {
+                        action: HandlerAction::SmartGit,
+                        uri: &uri[..idx],
+                        child_path: None,
+                    }
+                } else {
+                    ParsedUri {
+                        action: HandlerAction::Refs,
+                        uri,
+                        child_path: None,
+                    }
+                }
+            } else {
+                ParsedUri {
+                    action: HandlerAction::Refs,
+                    uri,
+                    child_path: None,
+                }
+            }
+        }
+        Some("log") => ParsedUri {
+            action: HandlerAction::Log,
+            uri,
+            child_path: None,
+        },
+        Some("tree") => ParsedUri {
+            action: HandlerAction::Tree,
+            uri,
+            child_path: None,
+        },
+        Some("commit") => ParsedUri {
+            action: HandlerAction::Commit,
+            uri,
+            child_path: None,
+        },
+        Some("diff") => ParsedUri {
+            action: HandlerAction::Diff,
+            uri,
+            child_path: None,
+        },
+        Some("patch") => ParsedUri {
+            action: HandlerAction::Patch,
+            uri,
+            child_path: None,
+        },
+        Some("tag") => ParsedUri {
+            action: HandlerAction::Tag,
+            uri,
+            child_path: None,
+        },
+        Some("snapshot") => ParsedUri {
+            action: HandlerAction::Snapshot,
+            uri,
+            child_path: None,
+        },
+        Some(_) => {
+            static TREE_FINDER: LazyLock<memchr::memmem::Finder> =
+                LazyLock::new(|| memchr::memmem::Finder::new(b"/tree/"));
+
+            uri = original_uri;
+
+            // match tree children
+            if let Some(idx) = TREE_FINDER.find(uri.as_bytes()) {
+                ParsedUri {
+                    action: HandlerAction::Tree,
+                    uri: &uri[..idx],
+                    // 6 is the length of /tree/
+                    child_path: Some(Path::new(&uri[idx + 6..]).clean()),
+                }
+            } else {
+                ParsedUri {
+                    action: HandlerAction::Summary,
+                    uri,
+                    child_path: None,
+                }
+            }
+        }
+        None => ParsedUri {
+            action: HandlerAction::Summary,
+            uri,
+            child_path: None,
+        },
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum HandlerAction {
+    About,
+    SmartGit,
+    Refs,
+    Log,
+    Tree,
+    Commit,
+    Diff,
+    Patch,
+    Tag,
+    Snapshot,
+    Summary,
 }
 
 #[derive(Clone)]

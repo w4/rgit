@@ -61,11 +61,7 @@ pub async fn service(mut request: Request<Body>) -> Response {
         };
     }
 
-    let uri = request
-        .uri()
-        .path()
-        .trim_start_matches('/')
-        .trim_end_matches('/');
+    let uri = request.uri().path().trim_matches('/');
     let mut uri_parts = memchr::memchr_iter(b'/', uri.as_bytes());
 
     let original_uri = uri;

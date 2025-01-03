@@ -61,6 +61,30 @@
     </tr>
     </tbody>
     {%- endif %}
+
+    {% if exported %}
+    <tbody>
+    <tr class="separator">
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+    </tr>
+    <tr class="no-background">
+        <th>Clone</th>
+        <th></th>
+        <th></th>
+        <th></th>
+    </tr>
+    <tr>
+        <td colspan="4">
+            <a rel="vcs-git" href="/{{ repo.display() }}" title="{{ repo.display() }} Git repository">
+                https://{{ host }}/{{ repo.display() }}
+            </a>
+        </td>
+    </tr>
+    </tbody>
+    {%- endif %}
 </table>
 </div>
 {% endblock %}

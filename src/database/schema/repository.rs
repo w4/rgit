@@ -28,6 +28,10 @@ pub struct Repository {
     pub last_modified: (i64, i32),
     /// The default branch for Git operations
     pub default_branch: Option<String>,
+    /// Whether the repository is available for HTTP(s) cloning
+    ///
+    /// This is set to `true` based on the presence of `git-daemon-export-ok` in the repository
+    pub exported: bool,
 }
 
 pub type YokedRepository = Yoked<&'static <Repository as Archive>::Archived>;

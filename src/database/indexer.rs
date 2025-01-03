@@ -93,6 +93,7 @@ fn update_repository_metadata(scan_path: &Path, db: &rocksdb::DB) {
                 (r.unix_timestamp(), r.offset().whole_seconds())
             },
             default_branch: find_default_branch(&git_repository).ok().flatten(),
+            exported: repository_path.join("git-daemon-export-ok").exists(),
         }
         .insert(db, relative);
 

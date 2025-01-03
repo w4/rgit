@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use anyhow::Context;
 use askama::Template;
-use axum::{response::IntoResponse, Extension};
+use axum::{extract::Host, response::IntoResponse, Extension};
 use rkyv::string::ArchivedString;
 
 use crate::{
@@ -21,11 +21,14 @@ pub struct View {
     refs: Refs,
     commit_list: Vec<YokedCommit>,
     branch: Option<Arc<str>>,
+    exported: bool,
+    host: String,
 }
 
 pub async fn handle(
     Extension(repo): Extension<Repository>,
     Extension(db): Extension<Arc<rocksdb::DB>>,
+    Host(host): Host,
 ) -> Result<impl IntoResponse> {
     tokio::task::spawn_blocking(move || {
         let repository = crate::database::schema::repository::Repository::open(&db, &*repo)?
@@ -57,6 +60,8 @@ pub async fn handle(
             refs: Refs { heads, tags },
             commit_list: commits,
             branch: None,
+            exported: repository.get().exported,
+            host,
         }))
     })
     .await

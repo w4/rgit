@@ -2,7 +2,8 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use anyhow::Context;
 use askama::Template;
-use axum::{extract::Host, response::IntoResponse, Extension};
+use axum::{response::IntoResponse, Extension};
+use axum_extra::extract::Host;
 use rkyv::string::ArchivedString;
 
 use crate::{

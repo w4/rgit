@@ -90,7 +90,7 @@ let
         fi
 
         $CC -c src/parser.c -o parser.o $FLAGS
-        $CXX -shared -install_name $out/$NAME.so -o $NAME.so *.o
+        $CXX -shared${lib.optionalString stdenv.isDarwin " -install_name $out/$NAME.so"} -o $NAME.so *.o
 
         runHook postBuild
       '';

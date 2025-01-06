@@ -22,16 +22,22 @@
       let
         pkgs = import nixpkgs { inherit system; };
         craneLib = crane.mkLib pkgs;
-        src = craneLib.cleanCargoSource ./.;
-        helix-grammar = pkgs.callPackage "${helix}/grammars.nix" { inherit pkgs; };
-        rgit-grammar = pkgs.runCommand "consolidated-rgit-grammars" { } ''
-          mkdir -p $out
-          for file in ${helix-grammar}/*; do
-            ln -s "$file" "$out/libtree-sitter-$(basename "$file")"
-          done
-          ln -s "${helix}/languages.toml" "$out/languages.toml"
-          ln -s "${helix}/runtime/queries" "$out/queries"
-        '';
+        cargoOnlySrc = craneLib.cleanCargoSource ./.;
+        src = pkgs.lib.fileset.toSource {
+          root = ./.;
+          fileset = pkgs.lib.fileset.unions [
+            ./.cargo
+            ./Cargo.toml
+            ./Cargo.lock
+            ./tree-sitter-grammar-repository
+            ./src
+            ./statics
+            ./templates
+            ./themes
+            ./build.rs
+          ];
+        };
+        rgit-grammar = pkgs.callPackage ./grammars.nix { inherit helix; };
         commonArgs = {
           inherit src;
           strictDeps = true;
@@ -39,40 +45,23 @@
           nativeBuildInputs = with pkgs; [ cmake clang ];
           LIBCLANG_PATH = "${pkgs.clang.cc.lib}/lib";
           ROCKSDB_LIB_DIR = "${pkgs.rocksdb}/lib";
-          TREE_SITTER_GRAMMAR_LIB_DIR = "${rgit-grammar}";
         };
-        cargoArtifacts = craneLib.buildDepsOnly commonArgs;
-        rgit = craneLib.buildPackage (commonArgs // {
+        cargoArtifacts = craneLib.buildDepsOnly (commonArgs // { src = cargoOnlySrc; });
+        buildArgs = commonArgs // {
           inherit cargoArtifacts;
-          doCheck = false;
-          src = pkgs.lib.fileset.toSource {
-            root = ./.;
-            fileset = pkgs.lib.fileset.unions [
-              ./.cargo
-              ./Cargo.toml
-              ./Cargo.lock
-              ./tree-sitter-grammar-repository
-              ./src
-              ./statics
-              ./templates
-              ./themes
-              ./build.rs
-            ];
-          };
-        });
+          buildInputs = [ rgit-grammar ] ++ commonArgs.buildInputs;
+          TREE_SITTER_GRAMMAR_LIB_DIR = rgit-grammar;
+        };
+        rgit = craneLib.buildPackage (buildArgs // { doCheck = false; });
         treefmt = treefmt-nix.lib.evalModule pkgs ./treefmt.nix;
       in
       {
         checks = {
           inherit rgit;
-          rgit-clippy = craneLib.cargoClippy (commonArgs // {
-            inherit cargoArtifacts;
-            cargoClippyExtraArgs = "--all --all-targets --all-features";
-          });
-          rgit-doc = craneLib.cargoDoc (commonArgs // { inherit cargoArtifacts; });
-          rgit-audit = craneLib.cargoAudit { inherit src advisory-db; };
-          rgit-test = craneLib.cargoNextest (commonArgs // {
-            inherit cargoArtifacts;
+          rgit-clippy = craneLib.cargoClippy buildArgs;
+          rgit-doc = craneLib.cargoDoc buildArgs;
+          rgit-audit = craneLib.cargoAudit { inherit advisory-db; src = cargoOnlySrc; };
+          rgit-test = craneLib.cargoNextest (buildArgs // {
             partitions = 1;
             partitionType = "count";
           });
@@ -174,7 +163,7 @@
       });
 
   nixConfig = {
-    extra-substituters = ["https://rgit.cachix.org"];
-    extra-trusted-public-keys = ["rgit.cachix.org-1:3Wva/GHhrlhbYx+ObbEYQSYq1Yzk8x9OAvEvcYazgL0="];
+    extra-substituters = [ "https://rgit.cachix.org" ];
+    extra-trusted-public-keys = [ "rgit.cachix.org-1:3Wva/GHhrlhbYx+ObbEYQSYq1Yzk8x9OAvEvcYazgL0=" ];
   };
 }

@@ -55,9 +55,7 @@ postprocessors = []
 conventional_commits = false
 filter_unconventional = false
 split_commits = false
-commit_preprocessors = [
-  { pattern = '\((\w+\s)?#([0-9]+)\)', replace = "" },
-]
+commit_preprocessors = [{ pattern = '\((\w+\s)?#([0-9]+)\)', replace = "" }]
 filter_commits = false
 topo_order = false
 sort_commits = "newest"

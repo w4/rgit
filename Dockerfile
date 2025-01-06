@@ -1,11 +1,16 @@
-FROM nixos/nix:2.24.9 AS builder
-
-RUN nix-channel --update
-RUN echo "experimental-features = nix-command flakes" >> /etc/nix/nix.conf
+FROM nixos/nix:latest AS builder
 
 WORKDIR /app
 COPY . .
 
-RUN nix build .#
+RUN nix --extra-experimental-features "nix-command flakes" --accept-flake-config build .#
+RUN mkdir /tmp/nix-store-closure
+RUN cp -R $(nix-store -qR result/) /tmp/nix-store-closure
 
-CMD ["/app/result/bin/rgit"]
+FROM scratch
+
+WORKDIR /app
+COPY --from=builder /tmp/nix-store-closure /nix/store
+COPY --from=builder /app/result /app
+
+ENTRYPOINT ["/app/bin/rgit"]

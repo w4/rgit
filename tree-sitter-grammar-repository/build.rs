@@ -29,6 +29,9 @@ static BLACKLISTED_MODULES: &[&str] = &[
     "wren",
     // doesn't compile on macos
     "gemini",
+];
+
+static BLACKLISTED_FOR_STATIC_LINKING: &[&str] = &[
     // all of these have some sort of conflict with higher value highlighters
     // when statically linking due to variations of:
     // https://github.com/ikatyang/tree-sitter-vue/issues/27
@@ -110,8 +113,8 @@ fn main() -> anyhow::Result<()> {
     let mut grammar_defs = Vec::new();
     for grammar in &config.grammar {
         let name = &grammar.name;
-        if let Some(tokens) =
-            build_language_module(name, query_path.as_path()).with_context(|| name.to_string())?
+        if let Some(tokens) = build_language_module(name, query_path.as_path(), dylib)
+            .with_context(|| name.to_string())?
         {
             grammar_defs.push(tokens);
         }
@@ -124,14 +127,14 @@ fn main() -> anyhow::Result<()> {
     )
     .context("failed to write grammar defs")?;
 
-    let registry = build_grammar_registry(config.grammar.iter().map(|v| v.name.clone()));
+    let registry = build_grammar_registry(config.grammar.iter().map(|v| v.name.clone()), dylib);
     fs::write(
         out_dir.join("grammar.registry.rs"),
         prettyplease::unparse(&syn::parse2(registry).context("failed to parse grammar registry")?),
     )
     .context("failed to write grammar registry")?;
 
-    let language = build_language_registry(config.language)?;
+    let language = build_language_registry(config.language, dylib)?;
     fs::write(
         out_dir.join("language.registry.rs"),
         prettyplease::unparse(&syn::parse2(language)?),
@@ -142,6 +145,7 @@ fn main() -> anyhow::Result<()> {
 
 fn build_language_registry(
     language_definition: Vec<LanguageDefinition>,
+    dylib: bool,
 ) -> anyhow::Result<proc_macro2::TokenStream> {
     let mut camel = Vec::new();
     let mut grammars = Vec::new();
@@ -154,7 +158,9 @@ fn build_language_registry(
     let mut regex_to_camel = Vec::new();
 
     for language in &language_definition {
-        if BLACKLISTED_MODULES.contains(&language.name.as_str()) {
+        if BLACKLISTED_MODULES.contains(&language.name.as_str())
+            || (!dylib && BLACKLISTED_FOR_STATIC_LINKING.contains(&language.name.as_str()))
+        {
             continue;
         }
 
@@ -267,9 +273,15 @@ fn build_language_registry(
     })
 }
 
-fn build_grammar_registry(names: impl Iterator<Item = String>) -> proc_macro2::TokenStream {
+fn build_grammar_registry(
+    names: impl Iterator<Item = String>,
+    dylib: bool,
+) -> proc_macro2::TokenStream {
     let (ids, plain, camel, snake) = names
-        .filter(|name| !BLACKLISTED_MODULES.contains(&name.as_str()))
+        .filter(|name| {
+            !BLACKLISTED_MODULES.contains(&name.as_str())
+                && (dylib || !BLACKLISTED_FOR_STATIC_LINKING.contains(&name.as_str()))
+        })
         .enumerate()
         .fold(
             (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
@@ -324,8 +336,11 @@ fn build_grammar_registry(names: impl Iterator<Item = String>) -> proc_macro2::T
 fn build_language_module(
     name: &str,
     query_path: &Path,
+    dylib: bool,
 ) -> anyhow::Result<Option<proc_macro2::TokenStream>> {
-    if BLACKLISTED_MODULES.contains(&name) {
+    if BLACKLISTED_MODULES.contains(&name)
+        || (!dylib && BLACKLISTED_FOR_STATIC_LINKING.contains(&name))
+    {
         return Ok(None);
     }
 
@@ -393,7 +408,9 @@ fn fetch_and_build_grammar(
     let pool = ThreadPool::new(std::thread::available_parallelism()?.get());
 
     for grammar in grammars {
-        if BLACKLISTED_MODULES.contains(&grammar.name.as_str()) {
+        if BLACKLISTED_MODULES.contains(&grammar.name.as_str())
+            || BLACKLISTED_FOR_STATIC_LINKING.contains(&grammar.name.as_str())
+        {
             continue;
         }
 

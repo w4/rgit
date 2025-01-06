@@ -29,6 +29,16 @@ static BLACKLISTED_MODULES: &[&str] = &[
     "wren",
     // doesn't compile on macos
     "gemini",
+    // all of these have some sort of conflict with higher value highlighters
+    // when statically linking due to variations of:
+    // https://github.com/ikatyang/tree-sitter-vue/issues/27
+    "vue",
+    "purescript",
+    "rst",
+    "comment",
+    "v",
+    "unison",
+    "llvm",
 ];
 
 fn main() -> anyhow::Result<()> {

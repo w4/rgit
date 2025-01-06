@@ -25,7 +25,10 @@
   outputs = { self, nixpkgs, utils, crane, advisory-db, treefmt-nix, helix, nix-github-actions }:
     {
       githubActions = nix-github-actions.lib.mkGithubMatrix {
-        checks = { inherit (self.checks) x86_64-linux x86_64-darwin aarch64-darwin; };
+        checks =
+          builtins.mapAttrs
+            (name: value: if name != "x86_64-linux" then removeAttrs value [ "clippy" "audit" "formatting" "doc" ] else value)
+            { inherit (self.checks) x86_64-linux aarch64-darwin; };
       };
     }
     //

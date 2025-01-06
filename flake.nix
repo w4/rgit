@@ -15,9 +15,20 @@
       url = "github:JordanForks/helix";
       flake = false;
     };
+
+    nix-github-actions = {
+      url = "github:nix-community/nix-github-actions";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, utils, crane, advisory-db, treefmt-nix, helix }:
+  outputs = { self, nixpkgs, utils, crane, advisory-db, treefmt-nix, helix, nix-github-actions }:
+    {
+      githubActions = nix-github-actions.lib.mkGithubMatrix {
+        checks = { inherit (self.checks) x86_64-linux x86_64-darwin aarch64-darwin; };
+      };
+    }
+    //
     utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
@@ -57,11 +68,11 @@
       in
       {
         checks = {
-          inherit rgit;
-          rgit-clippy = craneLib.cargoClippy buildArgs;
-          rgit-doc = craneLib.cargoDoc buildArgs;
-          rgit-audit = craneLib.cargoAudit { inherit advisory-db; src = cargoOnlySrc; };
-          rgit-test = craneLib.cargoNextest (buildArgs // {
+          build = rgit;
+          clippy = craneLib.cargoClippy buildArgs;
+          doc = craneLib.cargoDoc buildArgs;
+          audit = craneLib.cargoAudit { inherit advisory-db; src = cargoOnlySrc; };
+          test = craneLib.cargoNextest (buildArgs // {
             partitions = 1;
             partitionType = "count";
           });

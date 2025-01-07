@@ -75,6 +75,7 @@
           clippy = craneLib.cargoClippy buildArgs;
           doc = craneLib.cargoDoc buildArgs;
           audit = craneLib.cargoAudit { inherit advisory-db; src = cargoOnlySrc; };
+          deny = craneLib.cargoDeny { src = cargoOnlySrc; };
           test = craneLib.cargoNextest (buildArgs // {
             partitions = 1;
             partitionType = "count";

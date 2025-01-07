@@ -44,8 +44,8 @@ fn update_repository_metadata(scan_path: &Path, db: &rocksdb::DB) {
     let mut discovered = Vec::new();
     discover_repositories(scan_path, &mut discovered);
 
-    for repository in discovered {
-        let Some(relative) = get_relative_path(scan_path, &repository) else {
+    for (repository_path, git_repository) in discovered {
+        let Some(relative) = get_relative_path(scan_path, &repository_path) else {
             continue;
         };
 
@@ -65,22 +65,10 @@ fn update_repository_metadata(scan_path: &Path, db: &rocksdb::DB) {
         let Some(name) = relative.file_name().and_then(OsStr::to_str) else {
             continue;
         };
-        let description = std::fs::read(repository.join("description")).unwrap_or_default();
+        let description = std::fs::read(repository_path.join("description")).unwrap_or_default();
         let description = String::from_utf8(description)
             .ok()
             .filter(|v| !v.is_empty());
-
-        let repository_path = scan_path.join(relative);
-
-        let mut git_repository = match gix::open(repository_path.clone()) {
-            Ok(v) => v,
-            Err(error) => {
-                warn!(%error, "Failed to open repository {} to update metadata, skipping", relative.display());
-                continue;
-            }
-        };
-
-        git_repository.object_cache_size(10 * 1024 * 1024);
 
         let res = Repository {
             id,
@@ -414,7 +402,7 @@ fn get_relative_path<'a>(relative_to: &Path, full_path: &'a Path) -> Option<&'a 
     full_path.strip_prefix(relative_to).ok()
 }
 
-fn discover_repositories(current: &Path, discovered_repos: &mut Vec<PathBuf>) {
+fn discover_repositories(current: &Path, discovered_repos: &mut Vec<(PathBuf, gix::Repository)>) {
     let current = match std::fs::read_dir(current) {
         Ok(v) => v,
         Err(error) => {
@@ -429,12 +417,17 @@ fn discover_repositories(current: &Path, discovered_repos: &mut Vec<PathBuf>) {
         .filter(|path| path.is_dir());
 
     for dir in dirs {
-        if dir.join("packed-refs").is_file() {
-            // we've hit what looks like a bare git repo, lets take it
-            discovered_repos.push(dir);
-        } else {
-            // probably not a bare git repo, lets recurse deeper
-            discover_repositories(&dir, discovered_repos);
+        match gix::open_opts(&dir, gix::open::Options::default().open_path_as_is(true)) {
+            Ok(mut repo) => {
+                repo.object_cache_size(10 * 1024 * 1024);
+                discovered_repos.push((dir, repo));
+            }
+            Err(gix::open::Error::NotARepository { .. }) => {
+                discover_repositories(&dir, discovered_repos);
+            }
+            Err(error) => {
+                warn!(%error, "Failed to open repository {} for indexing", dir.display());
+            }
         }
     }
 }

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Context;
-use gix::{actor::SignatureRef, ObjectId};
+use gix::{actor::SignatureRef, objs::CommitRef, ObjectId};
 use rkyv::{Archive, Serialize};
 use rocksdb::{IteratorMode, ReadOptions, WriteBatch};
 use time::{OffsetDateTime, UtcOffset};
@@ -25,18 +25,19 @@ pub struct Commit {
 
 impl Commit {
     pub fn new(
-        commit: &gix::Commit<'_>,
+        oid: ObjectId,
+        commit: &CommitRef<'_>,
         author: SignatureRef<'_>,
         committer: SignatureRef<'_>,
     ) -> Result<Self, anyhow::Error> {
-        let message = commit.message()?;
+        let message = commit.message();
 
         Ok(Self {
             summary: message.summary().to_string(),
             message: message.body.map(ToString::to_string).unwrap_or_default(),
             committer: committer.try_into()?,
             author: author.try_into()?,
-            hash: match commit.id().detach() {
+            hash: match oid {
                 ObjectId::Sha1(d) => d,
             },
         })

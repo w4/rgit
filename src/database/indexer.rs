@@ -251,10 +251,12 @@ fn branch_index_update(
             }
 
             let commit = rev.object()?;
-            let author = commit.author()?;
-            let committer = commit.committer()?;
+            let oid = commit.id;
+            let commit = commit.decode()?;
+            let author = commit.author();
+            let committer = commit.committer();
 
-            Commit::new(&commit, author, committer)?.insert(
+            Commit::new(oid, &commit, author, committer)?.insert(
                 &commit_tree,
                 tree_len + i,
                 &mut batch,

@@ -739,11 +739,11 @@ impl<'a> TryFrom<SignatureRef<'a>> for CommitUser<'a> {
 
 impl CommitUser<'_> {
     pub fn name(&self) -> &BStr {
-        &self.name
+        self.name
     }
 
     pub fn email(&self) -> &BStr {
-        &self.email
+        self.email
     }
 
     pub fn time(&self) -> OffsetDateTime {
@@ -785,6 +785,7 @@ enum SmallVec<T> {
 }
 
 impl<T: Copy> SmallVec<T> {
+    #[allow(clippy::type_complexity)]
     fn iter(
         &self,
     ) -> Either<std::iter::Empty<T>, Either<std::iter::Once<T>, Copied<std::slice::Iter<T>>>> {
@@ -805,17 +806,16 @@ impl<'a> CommitInner<'a> {
             committer: CommitUser::try_from(commit.committer)?,
             oid,
             tree: commit.tree,
-            parents: commit
-                .parents
-                .into_inner()
-                .map(|[v]| SmallVec::One(v))
-                .unwrap_or_else(|inner| {
+            parents: commit.parents.into_inner().map_or_else(
+                |inner| {
                     if inner.is_empty() {
                         SmallVec::None
                     } else {
                         SmallVec::Many(inner.into_vec())
                     }
-                }),
+                },
+                |[v]| SmallVec::One(v),
+            ),
 
             summary: message.summary(),
             body: message.body.unwrap_or_else(|| BStr::new("")),
@@ -839,7 +839,7 @@ impl CommitInner<'_> {
     }
 
     pub fn tree(&self) -> &BStr {
-        &self.tree
+        self.tree
     }
 
     pub fn parents(&self) -> impl Iterator<Item = &BStr> {
@@ -851,7 +851,7 @@ impl CommitInner<'_> {
     }
 
     pub fn body(&self) -> &BStr {
-        &self.body
+        self.body
     }
 }
 

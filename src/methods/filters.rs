@@ -3,6 +3,7 @@
 
 use std::{
     borrow::Borrow,
+    fmt::Display,
     sync::{Arc, LazyLock},
 };
 
@@ -40,8 +41,18 @@ pub fn file_perms(s: &u16) -> Result<String, askama::Error> {
     Ok(unix_mode::to_string(u32::from(*s)))
 }
 
-pub fn hex(s: &[u8]) -> Result<String, askama::Error> {
-    Ok(const_hex::encode(s))
+pub struct DisplayHexBuffer<const N: usize>(const_hex::Buffer<N>);
+
+impl<const N: usize> Display for DisplayHexBuffer<N> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0.as_str())
+    }
+}
+
+pub fn hex(s: &[u8; 20]) -> Result<DisplayHexBuffer<20>, askama::Error> {
+    let mut buf = const_hex::Buffer::new();
+    buf.format(s);
+    Ok(DisplayHexBuffer(buf))
 }
 
 pub fn gravatar(email: &str) -> Result<&'static str, askama::Error> {

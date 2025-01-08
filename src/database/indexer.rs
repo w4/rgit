@@ -8,7 +8,6 @@ use std::{
 
 use anyhow::Context;
 use gix::{bstr::ByteSlice, refs::Category, Reference};
-use ini::Ini;
 use itertools::Itertools;
 use rocksdb::WriteBatch;
 use time::{OffsetDateTime, UtcOffset};
@@ -70,11 +69,16 @@ fn update_repository_metadata(scan_path: &Path, db: &rocksdb::DB) {
             .ok()
             .filter(|v| !v.is_empty());
 
+        let owner = git_repository
+            .config_snapshot()
+            .string("gitweb.owner")
+            .map(|v| v.to_string());
+
         let res = Repository {
             id,
             name: name.to_string(),
             description,
-            owner: find_gitweb_owner(repository_path.as_path()),
+            owner,
             last_modified: {
                 let r =
                     find_last_committed_time(&git_repository).unwrap_or(OffsetDateTime::UNIX_EPOCH);
@@ -104,16 +108,11 @@ fn find_last_committed_time(repo: &gix::Repository) -> Result<OffsetDateTime, an
         };
 
         let committer = commit.committer()?;
-        let mut committed_time = OffsetDateTime::from_unix_timestamp(committer.time.seconds)
-            .unwrap_or(OffsetDateTime::UNIX_EPOCH);
-
-        if let Ok(offset) = UtcOffset::from_whole_seconds(committer.time.offset) {
-            committed_time = committed_time.to_offset(offset);
-        }
-
-        if committed_time > timestamp {
-            timestamp = committed_time;
-        }
+        let offset = UtcOffset::from_whole_seconds(committer.time.offset).unwrap_or(UtcOffset::UTC);
+        let committed_time = OffsetDateTime::from_unix_timestamp(committer.time.seconds)
+            .unwrap_or(OffsetDateTime::UNIX_EPOCH)
+            .to_offset(offset);
+        timestamp = timestamp.max(committed_time);
     }
 
     Ok(timestamp)
@@ -430,13 +429,4 @@ fn discover_repositories(current: &Path, discovered_repos: &mut Vec<(PathBuf, gi
             }
         }
     }
-}
-
-fn find_gitweb_owner(repository_path: &Path) -> Option<String> {
-    // Load the Git config file and attempt to extract the owner from the "gitweb" section.
-    // If the owner is not found, an empty string is returned.
-    Ini::load_from_file(repository_path.join("config"))
-        .ok()?
-        .section_mut(Some("gitweb"))
-        .and_then(|section| section.remove("owner"))
 }

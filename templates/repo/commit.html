@@ -14,23 +14,23 @@
     <tbody>
     <tr>
         <th>author</th>
-        <td>{{ commit.author().name() }} &lt;{{ commit.author().email() }}&gt;</td>
-        <td>{{ commit.author().time() }}</td>
+        <td>{{ commit.get().author().name() }} &lt;{{ commit.get().author().email() }}&gt;</td>
+        <td>{{ commit.get().author().time() }}</td>
     </tr>
     <tr>
         <th>committer</th>
-        <td>{{ commit.committer().name() }} &lt;{{ commit.committer().email() }}&gt;</td>
-        <td>{{ commit.committer().time() }}</td>
+        <td>{{ commit.get().committer().name() }} &lt;{{ commit.get().committer().email() }}&gt;</td>
+        <td>{{ commit.get().committer().time() }}</td>
     </tr>
     <tr>
         <th>commit</th>
-        <td colspan="2"><pre><a href="/{{ repo.display() }}/commit?id={{ commit.oid() }}{% call link::maybe_branch_suffix(branch) %}" class="no-style">{{ commit.oid() }}</a> <a href="/{{ repo.display() }}/patch?id={{ commit.oid() }}">[patch]</a></pre></td>
+        <td colspan="2"><pre><a href="/{{ repo.display() }}/commit?id={{ commit.get().oid() }}{% call link::maybe_branch_suffix(branch) %}" class="no-style">{{ commit.get().oid() }}</a> <a href="/{{ repo.display() }}/patch?id={{ commit.get().oid() }}">[patch]</a></pre></td>
     </tr>
     <tr>
         <th>tree</th>
-        <td colspan="2"><pre><a href="/{{ repo.display() }}/tree?id={{ commit.tree() }}{% call link::maybe_branch_suffix(branch) %}" class="no-style">{{ commit.tree() }}</a></pre></td>
+        <td colspan="2"><pre><a href="/{{ repo.display() }}/tree?id={{ commit.get().tree() }}{% call link::maybe_branch_suffix(branch) %}" class="no-style">{{ commit.get().tree() }}</a></pre></td>
     </tr>
-    {%- for parent in commit.parents() %}
+    {%- for parent in commit.get().parents() %}
     <tr>
         <th>parent</th>
         <td colspan="2"><pre><a href="/{{ repo.display() }}/commit?id={{ parent }}{% call link::maybe_branch_suffix(branch) %}" class="no-style">{{ parent }}</a></pre></td>
@@ -44,8 +44,8 @@
 </table>
 </div>
 
-<h2>{{ commit.summary() }}</h2>
-<pre>{{ commit.body() }}</pre>
+<h2>{{ commit.get().summary() }}</h2>
+<pre>{{ commit.get().body() }}</pre>
 
 <h3>Diff</h3>
 <pre class="diff">{{ commit.diff_stats|safe }}

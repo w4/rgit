@@ -7,9 +7,9 @@
     <tbody>
     <tr>
         <th>tag name</th>
-        <td>{{ tag.name }}</td>
+        <td>{{ tag.get().name }}</td>
     </tr>
-    {% if let Some(tagger) = tag.tagger %}
+    {% if let Some(tagger) = tag.get().tagger %}
         <tr>
             <th>tag date</th>
             <td>{{ tagger.time() }}</td>
@@ -19,7 +19,7 @@
             <td>{{ tagger.name() }} &lt;{{ tagger.email() }}&gt;</td>
         </tr>
     {% endif %}
-    {% if let Some(tagged_object) = tag.tagged_object %}
+    {% if let Some(tagged_object) = tag.get().tagged_object %}
         <tr>
             <th>tagged object</th>
             <td>
@@ -34,11 +34,13 @@
     {% endif %}
     <tr>
         <th>download</th>
-        <td colspan="2"><pre><a href="/{{ repo.display() }}/snapshot?h={{ tag.name }}">{{ tag.name }}.tar.gz</a></pre></td>
+        <td colspan="2">
+            <pre><a href="/{{ repo.display() }}/snapshot?h={{ tag.get().name }}">{{ tag.get().name }}.tar.gz</a></pre>
+        </td>
     </tr>
     </tbody>
 </table>
 </div>
 
-<pre class="h2-first-line">{{ tag.message }}</pre>
+<pre class="h2-first-line">{{ tag.get().message }}</pre>
 {% endblock %}

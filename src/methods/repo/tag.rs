@@ -3,6 +3,7 @@ use std::sync::Arc;
 use askama::Template;
 use axum::{extract::Query, response::IntoResponse, Extension};
 use serde::Deserialize;
+use yoke::Yoke;
 
 use crate::{
     git::DetailedTag,
@@ -24,7 +25,7 @@ pub struct UriQuery {
 #[template(path = "repo/tag.html")]
 pub struct View {
     repo: Repository,
-    tag: DetailedTag,
+    tag: Yoke<DetailedTag<'static>, Vec<u8>>,
     branch: Option<Arc<str>>,
 }
 

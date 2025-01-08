@@ -8,20 +8,21 @@ use gix::{
     bstr::{BStr, BString, ByteSlice, ByteVec},
     diff::blob::{platform::prepare_diff::Operation, Sink},
     object::{tree::EntryKind, Kind},
-    objs::tree::EntryRef,
+    objs::{tree::EntryRef, CommitRef, TagRef},
     prelude::TreeEntryRefExt,
     traverse::tree::visit::Action,
     url::Scheme,
     ObjectId, ThreadSafeRepository, Url,
 };
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 use moka::future::Cache;
-use std::borrow::Cow;
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, VecDeque},
     ffi::OsStr,
     fmt::{self, Arguments, Write},
     io::ErrorKind,
+    iter::Copied,
     path::{Path, PathBuf},
     str::FromStr,
     sync::Arc,
@@ -30,8 +31,10 @@ use std::{
 use tar::Builder;
 use time::{OffsetDateTime, UtcOffset};
 use tracing::{error, instrument, warn};
+use yoke::{Yoke, Yokeable};
 
 use crate::{
+    methods::filters::DisplayHexBuffer,
     syntax_highlight::{format_file, format_file_inner, ComrakHighlightAdapter, FileIdentifier},
     unified_diff_builder::{Callback, UnifiedDiffBuilder},
 };
@@ -272,7 +275,7 @@ impl OpenRepository {
     }
 
     #[instrument(skip(self))]
-    pub async fn tag_info(self: Arc<Self>) -> Result<DetailedTag> {
+    pub async fn tag_info(self: Arc<Self>) -> Result<Yoke<DetailedTag<'static>, Vec<u8>>> {
         tokio::task::spawn_blocking(move || {
             let tag_name = self.branch.clone().context("no tag given")?;
             let repo = self.repo.to_thread_local();
@@ -281,25 +284,25 @@ impl OpenRepository {
                 .find_reference(&format!("refs/tags/{tag_name}"))
                 .context("Given tag does not exist in repository")?
                 .peel_to_tag()
-                .context("Couldn't get to a tag from the given reference")?;
-            let tag_target = tag
-                .target_id()
-                .context("Couldn't find tagged object")?
-                .object()?;
+                .context("Couldn't get to a tag from the given reference")?
+                .detach()
+                .data;
 
-            let tagged_object = match tag_target.kind {
-                Kind::Commit => Some(TaggedObject::Commit(tag_target.id.to_string())),
-                Kind::Tree => Some(TaggedObject::Tree(tag_target.id.to_string())),
-                _ => None,
-            };
+            Yoke::try_attach_to_cart(tag, move |tag| {
+                let tag = TagRef::from_bytes(tag)?;
 
-            let tag_info = tag.decode()?;
+                let tagged_object = match tag.target_kind {
+                    Kind::Commit => Some(TaggedObject::Commit(tag.target)),
+                    Kind::Tree => Some(TaggedObject::Tree(tag.target)),
+                    _ => None,
+                };
 
-            Ok(DetailedTag {
-                name: tag_name,
-                tagger: tag_info.tagger.map(TryInto::try_into).transpose()?,
-                message: tag_info.message.to_string(),
-                tagged_object,
+                Ok::<_, anyhow::Error>(DetailedTag {
+                    name: tag_name,
+                    tagger: tag.tagger.map(TryInto::try_into).transpose()?,
+                    tagged_object,
+                    message: tag.message,
+                })
             })
         })
         .await
@@ -393,10 +396,16 @@ impl OpenRepository {
                 .context("Couldn't find commit HEAD of repository refers to")?;
             let (diff_output, diff_stats) = fetch_diff_and_stats(&repo, &commit, highlighted)?;
 
-            let mut commit = Commit::try_from(commit)?;
-            commit.diff_stats = diff_stats;
-            commit.diff = diff_output;
-            Ok(commit)
+            let oid = take_oid(commit.id);
+            let inner = Yoke::try_attach_to_cart(commit.detach().data, |commit| {
+                CommitInner::new(CommitRef::from_bytes(commit)?, oid)
+            })?;
+
+            Ok(Commit {
+                inner,
+                diff_stats,
+                diff: diff_output,
+            })
         })
         .await
         .context("Failed to join Tokio task")?
@@ -479,16 +488,28 @@ impl OpenRepository {
                     let (diff_output, diff_stats) =
                         fetch_diff_and_stats(&repo, &commit, highlighted)?;
 
-                    let mut commit = Commit::try_from(commit)?;
-                    commit.diff_stats = diff_stats;
-                    commit.diff = diff_output;
+                    let oid = take_oid(commit.id);
 
-                    Ok(Arc::new(commit))
+                    let inner = Yoke::try_attach_to_cart(commit.detach().data, |commit| {
+                        CommitInner::new(CommitRef::from_bytes(commit)?, oid)
+                    })?;
+
+                    Ok(Arc::new(Commit {
+                        inner,
+                        diff_stats,
+                        diff: diff_output,
+                    }))
                 })
                 .await
                 .context("Failed to join Tokio task")?
             })
             .await
+    }
+}
+
+fn take_oid(v: ObjectId) -> [u8; 20] {
+    match v {
+        ObjectId::Sha1(v) => v,
     }
 }
 
@@ -682,33 +703,33 @@ impl IntoResponse for Content {
 }
 
 #[derive(Debug)]
-pub enum TaggedObject {
-    Commit(String),
-    Tree(String),
+pub enum TaggedObject<'a> {
+    Commit(&'a BStr),
+    Tree(&'a BStr),
 }
 
-#[derive(Debug)]
-pub struct DetailedTag {
+#[derive(Debug, Yokeable)]
+pub struct DetailedTag<'a> {
     pub name: Arc<str>,
-    pub tagger: Option<CommitUser>,
-    pub message: String,
-    pub tagged_object: Option<TaggedObject>,
+    pub tagger: Option<CommitUser<'a>>,
+    pub message: &'a BStr,
+    pub tagged_object: Option<TaggedObject<'a>>,
 }
 
 #[derive(Debug)]
-pub struct CommitUser {
-    name: String,
-    email: String,
+pub struct CommitUser<'a> {
+    name: &'a BStr,
+    email: &'a BStr,
     time: (i64, i32),
 }
 
-impl TryFrom<SignatureRef<'_>> for CommitUser {
+impl<'a> TryFrom<SignatureRef<'a>> for CommitUser<'a> {
     type Error = anyhow::Error;
 
-    fn try_from(v: SignatureRef<'_>) -> Result<Self> {
+    fn try_from(v: SignatureRef<'a>) -> Result<Self> {
         Ok(CommitUser {
-            name: v.name.to_string(),
-            email: v.email.to_string(),
+            name: v.name,
+            email: v.email,
             time: (v.time.seconds, v.time.offset),
             // time: OffsetDateTime::from_unix_timestamp(v.time.seconds)?
             //     .to_offset(UtcOffset::from_whole_seconds(v.time.offset)?),
@@ -716,12 +737,12 @@ impl TryFrom<SignatureRef<'_>> for CommitUser {
     }
 }
 
-impl CommitUser {
-    pub fn name(&self) -> &str {
+impl CommitUser<'_> {
+    pub fn name(&self) -> &BStr {
         &self.name
     }
 
-    pub fn email(&self) -> &str {
+    pub fn email(&self) -> &BStr {
         &self.email
     }
 
@@ -734,63 +755,102 @@ impl CommitUser {
 
 #[derive(Debug)]
 pub struct Commit {
-    author: CommitUser,
-    committer: CommitUser,
-    oid: String,
-    tree: String,
-    parents: Vec<String>,
-    summary: String,
-    body: String,
+    inner: yoke::Yoke<CommitInner<'static>, Vec<u8>>,
     pub diff_stats: String,
     pub diff: String,
 }
 
-impl TryFrom<gix::Commit<'_>> for Commit {
-    type Error = anyhow::Error;
+impl Commit {
+    pub fn get(&self) -> &CommitInner<'_> {
+        self.inner.get()
+    }
+}
 
-    fn try_from(commit: gix::Commit<'_>) -> Result<Self> {
-        let message = commit.message()?;
+#[derive(Debug, Yokeable)]
+pub struct CommitInner<'a> {
+    author: CommitUser<'a>,
+    committer: CommitUser<'a>,
+    oid: [u8; 20],
+    tree: &'a BStr,
+    parents: SmallVec<&'a BStr>,
+    summary: Cow<'a, BStr>,
+    body: &'a BStr,
+}
 
-        Ok(Commit {
-            author: CommitUser::try_from(commit.author()?)?,
-            committer: CommitUser::try_from(commit.committer()?)?,
-            oid: commit.id().to_string(),
-            tree: commit.tree_id()?.to_string(),
-            parents: commit.parent_ids().map(|v| v.to_string()).collect(),
-            summary: message.summary().to_string(),
-            body: message.body.map_or_else(String::new, ToString::to_string),
-            diff_stats: String::with_capacity(0),
-            diff: String::with_capacity(0),
+#[derive(Debug)]
+enum SmallVec<T> {
+    None,
+    One(T),
+    Many(Vec<T>),
+}
+
+impl<T: Copy> SmallVec<T> {
+    fn iter(
+        &self,
+    ) -> Either<std::iter::Empty<T>, Either<std::iter::Once<T>, Copied<std::slice::Iter<T>>>> {
+        match self {
+            Self::None => Either::Left(std::iter::empty()),
+            Self::One(v) => Either::Right(Either::Left(std::iter::once(*v))),
+            Self::Many(v) => Either::Right(Either::Right(v.iter().copied())),
+        }
+    }
+}
+
+impl<'a> CommitInner<'a> {
+    pub fn new(commit: gix::worktree::object::CommitRef<'a>, oid: [u8; 20]) -> Result<Self> {
+        let message = commit.message();
+
+        Ok(CommitInner {
+            author: CommitUser::try_from(commit.author)?,
+            committer: CommitUser::try_from(commit.committer)?,
+            oid,
+            tree: commit.tree,
+            parents: commit
+                .parents
+                .into_inner()
+                .map(|[v]| SmallVec::One(v))
+                .unwrap_or_else(|inner| {
+                    if inner.is_empty() {
+                        SmallVec::None
+                    } else {
+                        SmallVec::Many(inner.into_vec())
+                    }
+                }),
+
+            summary: message.summary(),
+            body: message.body.unwrap_or_else(|| BStr::new("")),
         })
     }
 }
 
-impl Commit {
-    pub fn author(&self) -> &CommitUser {
+impl CommitInner<'_> {
+    pub fn author(&self) -> &CommitUser<'_> {
         &self.author
     }
 
-    pub fn committer(&self) -> &CommitUser {
+    pub fn committer(&self) -> &CommitUser<'_> {
         &self.committer
     }
 
-    pub fn oid(&self) -> &str {
-        &self.oid
+    pub fn oid(&self) -> DisplayHexBuffer<20> {
+        let mut buf = const_hex::Buffer::new();
+        buf.format(&self.oid);
+        DisplayHexBuffer(buf)
     }
 
-    pub fn tree(&self) -> &str {
+    pub fn tree(&self) -> &BStr {
         &self.tree
     }
 
-    pub fn parents(&self) -> impl Iterator<Item = &str> {
-        self.parents.iter().map(String::as_str)
+    pub fn parents(&self) -> impl Iterator<Item = &BStr> {
+        self.parents.iter()
     }
 
-    pub fn summary(&self) -> &str {
+    pub fn summary(&self) -> &BStr {
         &self.summary
     }
 
-    pub fn body(&self) -> &str {
+    pub fn body(&self) -> &BStr {
         &self.body
     }
 }

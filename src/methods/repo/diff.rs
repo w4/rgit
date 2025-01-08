@@ -68,18 +68,19 @@ pub async fn handle_plain(
 
     let mut data = BytesMut::new();
 
-    writeln!(data, "From {} Mon Sep 17 00:00:00 2001", commit.oid()).unwrap();
+    writeln!(data, "From {} Mon Sep 17 00:00:00 2001", commit.get().oid()).unwrap();
     writeln!(
         data,
         "From: {} <{}>",
-        commit.author().name(),
-        commit.author().email()
+        commit.get().author().name(),
+        commit.get().author().email()
     )
     .unwrap();
 
     write!(data, "Date: ").unwrap();
     let mut writer = data.writer();
     commit
+        .get()
         .author()
         .time()
         .format_into(&mut writer, &Rfc2822)
@@ -87,9 +88,9 @@ pub async fn handle_plain(
     let mut data = writer.into_inner();
     writeln!(data).unwrap();
 
-    writeln!(data, "Subject: [PATCH] {}\n", commit.summary()).unwrap();
+    writeln!(data, "Subject: [PATCH] {}\n", commit.get().summary()).unwrap();
 
-    write!(data, "{}", commit.body()).unwrap();
+    write!(data, "{}", commit.get().body()).unwrap();
 
     writeln!(data, "---").unwrap();
 

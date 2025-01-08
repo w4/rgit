@@ -41,7 +41,7 @@ pub fn file_perms(s: &u16) -> Result<String, askama::Error> {
     Ok(unix_mode::to_string(u32::from(*s)))
 }
 
-pub struct DisplayHexBuffer<const N: usize>(const_hex::Buffer<N>);
+pub struct DisplayHexBuffer<const N: usize>(pub const_hex::Buffer<N>);
 
 impl<const N: usize> Display for DisplayHexBuffer<N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

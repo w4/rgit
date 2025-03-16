@@ -609,7 +609,7 @@ checksum = "5041cc499144891f3790297212f32a74fb938e5136a14943f338ef9e0ae276cf"
 dependencies = [
  "cfg-if",
  "crossbeam-utils",
- "hashbrown",
+ "hashbrown 0.14.5",
  "lock_api",
  "once_cell",
  "parking_lot_core",
@@ -1131,7 +1131,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ef65b256631078ef733bc5530c4e6b1c2e7d5c2830b75d4e9034ab3997d18fe"
 dependencies = [
  "gix-hash",
- "hashbrown",
+ "hashbrown 0.14.5",
  "parking_lot",
 ]
 
@@ -1167,7 +1167,7 @@ dependencies = [
  "gix-traverse",
  "gix-utils",
  "gix-validate",
- "hashbrown",
+ "hashbrown 0.14.5",
  "itoa",
  "libc",
  "memmap2",
@@ -1576,6 +1576,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "hashbrown"
+version = "0.15.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf151400ff0baff5465007dd2f3e717f3fe502074ca563069ce3a6629d07b289"
+
+[[package]]
 name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1841,7 +1847,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc9da1a252bd44cd341657203722352efc9bc0c847d06ea6d2dc1cd1135e0a01"
 dependencies = [
  "ahash",
- "hashbrown",
+ "hashbrown 0.14.5",
 ]
 
 [[package]]
@@ -2534,7 +2540,7 @@ dependencies = [
  "flate2",
  "futures-util",
  "gix",
- "hashbrown",
+ "hashbrown 0.14.5",
  "httparse",
  "humantime",
  "itertools",
@@ -2570,12 +2576,12 @@ dependencies = [
 
 [[package]]
 name = "rkyv"
-version = "0.8.8"
+version = "0.8.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "395027076c569819ea6035ee62e664f5e03d74e281744f55261dd1afd939212b"
+checksum = "1e147371c75553e1e2fcdb483944a8540b8438c31426279553b9a8182a9b7b65"
 dependencies = [
  "bytecheck",
- "hashbrown",
+ "hashbrown 0.15.2",
  "munge",
  "ptr_meta",
  "rancor",
@@ -2586,9 +2592,9 @@ dependencies = [
 
 [[package]]
 name = "rkyv_derive"
-version = "0.8.8"
+version = "0.8.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09cb82b74b4810f07e460852c32f522e979787691b0b7b7439fe473e49d49b2f"
+checksum = "246b40ac189af6c675d124b802e8ef6d5246c53e17367ce9501f8f66a81abb7a"
 dependencies = [
  "proc-macro2",
  "quote",

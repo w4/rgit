@@ -166,10 +166,21 @@ match the user that owns the directory containing your repositories.
 To configure automatic refresh in Docker, an environment variable is also provided.
 
 ```yml
+version: '3'
 services:
   rgit:
+    image: ghcr.io/w4/rgit:main
+    command:
+      - "[::]:8000"
+      - /git
+      - -d /tmp/rgit-cache.db
+    volumes:
+      - /volume/git:/git
+    ports:
+      - 8000:8000
     environment:
       - REFRESH_INTERVAL=5m
+    restart: unless-stopped
 ```
 
 Afterwards, bring up the container with `docker-compose up` to make sure everything works.

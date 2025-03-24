@@ -47,7 +47,7 @@ hashbrown = { version = "0.14", default-features = false, features = [
   "ahash",
 ] }
 httparse = "1.9"
-humantime = "2.1"
+humantime = "2.2"
 itertools = "0.12.1"
 md5 = "0.7"
 memchr = "2.7"

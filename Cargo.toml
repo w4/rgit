@@ -14,7 +14,7 @@ members = ["tree-sitter-grammar-repository"]
 [dependencies]
 anyhow = "1.0"
 arc-swap = "1.7"
-askama = { version = "0.12.0", default-features = false }
+askama = { version = "0.13.0", default-features = false }
 axum = { version = "0.8", default-features = false, features = [
   "query",
   "tokio",

@@ -525,7 +525,7 @@ pub struct ArchivalVisitor<'a> {
 
 impl ArchivalVisitor<'_> {
     fn pop_element(&mut self) {
-        if let Some(pos) = self.path.rfind_byte(b'/') {
+        if let Some(pos) = memchr::memrchr(b'/', &self.path) {
             self.path.resize(pos, 0);
         } else {
             self.path.clear();
@@ -545,6 +545,13 @@ impl gix::traverse::tree::Visit for ArchivalVisitor<'_> {
         self.path = self
             .path_deque
             .pop_front()
+            .expect("every call is matched with push_tracked_path_component");
+    }
+
+    fn pop_back_tracked_path_and_set_current(&mut self) {
+        self.path = self
+            .path_deque
+            .pop_back()
             .expect("every call is matched with push_tracked_path_component");
     }
 

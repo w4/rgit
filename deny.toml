@@ -27,7 +27,7 @@ confidence-threshold = 0.8
 exceptions = []
 
 [bans]
-multiple-versions = "warn"
+multiple-versions = "deny"
 wildcards = "allow"
 highlight = "all"
 workspace-default-features = "allow"
@@ -39,6 +39,7 @@ skip = [
 ]
 skip-tree = [
   { name = "matchers", reason = "tracing-subscriber's env-filter pulls in an ancient regex version" },
+  { crate = "thiserror@1.0.69", reason = "https://github.com/moka-rs/moka/pull/506" },
 ]
 
 [sources]

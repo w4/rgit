@@ -46,7 +46,7 @@ hashbrown = { version = "0.14", default-features = false, features = [
   "serde",
   "ahash",
 ] }
-httparse = "1.9"
+httparse = "1.10"
 humantime = "2.1"
 itertools = "0.12.1"
 md5 = "0.7"

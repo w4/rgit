@@ -373,3 +373,11 @@ impl<A: IntoResponse, B: IntoResponse> IntoResponse for ResponseEither<A, B> {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn placeholder() {
+        assert!(true);
+    }
+}

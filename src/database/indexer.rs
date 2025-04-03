@@ -2,13 +2,14 @@ use std::{
     collections::HashSet,
     ffi::OsStr,
     fmt::Debug,
+    io::{BufRead, BufReader},
     path::{Path, PathBuf},
     sync::Arc,
 };
 
 use anyhow::Context;
 use gix::{bstr::ByteSlice, refs::Category, Reference};
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 use rocksdb::WriteBatch;
 use time::{OffsetDateTime, UtcOffset};
 use tracing::{error, info, info_span, instrument, warn};
@@ -19,13 +20,13 @@ use crate::database::schema::{
     tag::{Tag, TagTree},
 };
 
-pub fn run(scan_path: &Path, db: &Arc<rocksdb::DB>) {
+pub fn run(scan_path: &Path, repository_list: Option<&Path>, db: &Arc<rocksdb::DB>) {
     let span = info_span!("index_update");
     let _entered = span.enter();
 
     info!("Starting index update");
 
-    update_repository_metadata(scan_path, db);
+    update_repository_metadata(scan_path, repository_list, db);
     update_repository_reflog(scan_path, db.clone());
     update_repository_tags(scan_path, db.clone());
 
@@ -39,9 +40,9 @@ pub fn run(scan_path: &Path, db: &Arc<rocksdb::DB>) {
 }
 
 #[instrument(skip(db))]
-fn update_repository_metadata(scan_path: &Path, db: &rocksdb::DB) {
+fn update_repository_metadata(scan_path: &Path, repository_list: Option<&Path>, db: &rocksdb::DB) {
     let mut discovered = Vec::new();
-    discover_repositories(scan_path, &mut discovered);
+    discover_repositories(scan_path, repository_list, &mut discovered);
 
     for (repository_path, git_repository) in discovered {
         let Some(relative) = get_relative_path(scan_path, &repository_path) else {
@@ -403,19 +404,51 @@ fn get_relative_path<'a>(relative_to: &Path, full_path: &'a Path) -> Option<&'a 
     full_path.strip_prefix(relative_to).ok()
 }
 
-fn discover_repositories(current: &Path, discovered_repos: &mut Vec<(PathBuf, gix::Repository)>) {
-    let current = match std::fs::read_dir(current) {
-        Ok(v) => v,
-        Err(error) => {
-            error!(%error, "Failed to enter repository directory {}", current.display());
-            return;
-        }
-    };
+fn discover_repositories(
+    current: &Path,
+    repository_list: Option<&Path>,
+    discovered_repos: &mut Vec<(PathBuf, gix::Repository)>,
+) {
+    let dirs = if let Some(repo_list) = repository_list {
+        let mut repo_list = match std::fs::File::open(&repo_list) {
+            Ok(v) => BufReader::new(v).lines(),
+            Err(error) => {
+                error!(%error, "Failed to open repository list file");
+                return;
+            }
+        };
 
-    let dirs = current
-        .filter_map(Result::ok)
-        .map(|v| v.path())
-        .filter(|path| path.is_dir());
+        let mut out = Vec::new();
+
+        while let Some(line) = repo_list.next() {
+            let line = match line {
+                Ok(v) => v,
+                Err(error) => {
+                    error!(%error, "Failed to read repository list file");
+                    return;
+                }
+            };
+
+            out.push(current.join(line));
+        }
+
+        Either::Left(out.into_iter())
+    } else {
+        let current = match std::fs::read_dir(current) {
+            Ok(v) => v,
+            Err(error) => {
+                error!(%error, "Failed to enter repository directory {}", current.display());
+                return;
+            }
+        };
+
+        Either::Right(
+            current
+                .filter_map(Result::ok)
+                .map(|v| v.path())
+                .filter(|path| path.is_dir()),
+        )
+    };
 
     for dir in dirs {
         match gix::open_opts(&dir, gix::open::Options::default().open_path_as_is(true)) {
@@ -423,8 +456,15 @@ fn discover_repositories(current: &Path, discovered_repos: &mut Vec<(PathBuf, gi
                 repo.object_cache_size(10 * 1024 * 1024);
                 discovered_repos.push((dir, repo));
             }
+            Err(gix::open::Error::NotARepository { .. }) if repository_list.is_none() => {
+                discover_repositories(&dir, None, discovered_repos);
+            }
+
             Err(gix::open::Error::NotARepository { .. }) => {
-                discover_repositories(&dir, discovered_repos);
+                warn!(
+                    "Repository list points to directory which isn't a Git repository: {}",
+                    dir.display()
+                );
             }
             Err(error) => {
                 warn!(%error, "Failed to open repository {} for indexing", dir.display());

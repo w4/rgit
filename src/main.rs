@@ -78,6 +78,10 @@ pub struct Args {
     bind_address: SocketAddr,
     /// The path in which your bare Git repositories reside (will be scanned recursively)
     scan_path: PathBuf,
+    /// Optional path (relative to cwd) to a plain text file containing a list of repositories relative to the `scan_path`
+    /// that are whitelisted to be exposed by rgit.
+    #[clap(long)]
+    repository_list: Option<PathBuf>,
     /// Configures the metadata refresh interval (eg. "never" or "60s")
     #[clap(long, default_value_t = RefreshInterval::Duration(Duration::from_secs(300)))]
     refresh_interval: RefreshInterval,
@@ -134,8 +138,12 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let db = open_db(&args)?;
 
-    let indexer_wakeup_task =
-        run_indexer(db.clone(), args.scan_path.clone(), args.refresh_interval);
+    let indexer_wakeup_task = run_indexer(
+        db.clone(),
+        args.scan_path.clone(),
+        args.repository_list.clone(),
+        args.refresh_interval,
+    );
 
     let css = {
         let theme = basic_toml::from_str::<Theme>(include_str!("../themes/github_light.toml"))
@@ -289,13 +297,14 @@ fn open_db(args: &Args) -> Result<Arc<rocksdb::DB>, anyhow::Error> {
 async fn run_indexer(
     db: Arc<rocksdb::DB>,
     scan_path: PathBuf,
+    repository_list: Option<PathBuf>,
     refresh_interval: RefreshInterval,
 ) -> Result<(), tokio::task::JoinError> {
     let (indexer_wakeup_send, mut indexer_wakeup_recv) = mpsc::channel(10);
 
     std::thread::spawn(move || loop {
         info!("Running periodic index");
-        crate::database::indexer::run(&scan_path, &db);
+        crate::database::indexer::run(&scan_path, repository_list.as_deref(), &db);
         info!("Finished periodic index");
 
         if indexer_wakeup_recv.blocking_recv().is_none() {

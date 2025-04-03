@@ -142,7 +142,7 @@ async fn main() -> Result<(), anyhow::Error> {
             .unwrap()
             .build_css();
         let css = Box::leak(
-            format!(r#"@media (prefers-color-scheme: light){{{theme}}}"#)
+            format!("@media (prefers-color-scheme: light){{{theme}}}")
                 .into_boxed_str()
                 .into_boxed_bytes(),
         );
@@ -155,7 +155,7 @@ async fn main() -> Result<(), anyhow::Error> {
             .unwrap()
             .build_css();
         let css = Box::leak(
-            format!(r#"@media (prefers-color-scheme: dark){{{theme}}}"#)
+            format!("@media (prefers-color-scheme: dark){{{theme}}}")
                 .into_boxed_str()
                 .into_boxed_bytes(),
         );

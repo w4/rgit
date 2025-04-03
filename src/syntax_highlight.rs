@@ -145,7 +145,7 @@ impl SyntaxHighlighterAdapter for ComrakHighlightAdapter {
         output: &mut dyn IoWrite,
         _attributes: HashMap<String, String>,
     ) -> std::io::Result<()> {
-        write!(output, r#"<pre>"#)
+        write!(output, "<pre>")
     }
 
     fn write_code_tag(

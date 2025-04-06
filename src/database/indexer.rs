@@ -97,7 +97,13 @@ fn update_repository_metadata(scan_path: &Path, repository_list: Option<&Path>, 
 }
 
 fn find_default_branch(repo: &gix::Repository) -> Result<Option<String>, anyhow::Error> {
-    Ok(Some(repo.head()?.name().as_bstr().to_string()))
+    Ok(Some(
+        repo.head()?
+            .referent_name()
+            .context("HEAD does not point to anything")?
+            .as_bstr()
+            .to_string(),
+    ))
 }
 
 fn find_last_committed_time(repo: &gix::Repository) -> Result<OffsetDateTime, anyhow::Error> {

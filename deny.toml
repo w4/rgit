@@ -14,7 +14,6 @@ allow = [
   "MIT",
   "Apache-2.0",
   "Unicode-3.0",
-  "Unicode-DFS-2016",
   "WTFPL",
   "BSL-1.0",
   "CC0-1.0",
@@ -36,6 +35,7 @@ allow = []
 deny = []
 skip = [
   { crate = "windows-sys@0.52.0", reason = "gix pulls in two separate versions" },
+  { crate = "zerocopy@0.7.35", reason = "gix pulls in old version of hashbrown" },
 ]
 skip-tree = [
   { name = "matchers", reason = "tracing-subscriber's env-filter pulls in an ancient regex version" },

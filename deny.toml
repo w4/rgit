@@ -40,6 +40,7 @@ skip = [
 skip-tree = [
   { name = "matchers", reason = "tracing-subscriber's env-filter pulls in an ancient regex version" },
   { crate = "thiserror@1.0.69", reason = "https://github.com/moka-rs/moka/pull/506" },
+  { crate = "bindgen@0.69.5", reason = "rocksdb still using old version" },
 ]
 
 [sources]

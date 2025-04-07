@@ -14,7 +14,10 @@ members = ["tree-sitter-grammar-repository"]
 [dependencies]
 anyhow = "1.0"
 arc-swap = "1.7"
-askama = { version = "0.12.0", default-features = false }
+askama = { version = "0.13.0", default-features = false, features = [
+  "derive",
+  "std",
+] }
 axum = { version = "0.8", default-features = false, features = [
   "query",
   "tokio",
@@ -35,8 +38,7 @@ const-hex = "1.14"
 const_format = "0.2"
 flate2 = "1.0"
 futures-util = "0.3"
-gix = { version = "0.70", default-features = false, features = [
-  "fast-sha1",
+gix = { version = "0.71", default-features = false, features = [
   "tracing",
   "parallel",
   "blob-diff",

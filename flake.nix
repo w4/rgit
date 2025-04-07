@@ -57,7 +57,7 @@
           inherit src;
           strictDeps = true;
           buildInputs = pkgs.lib.optionals pkgs.stdenv.isDarwin [ pkgs.libiconv ];
-          nativeBuildInputs = with pkgs; [ cmake clang ];
+          nativeBuildInputs = with pkgs; [ cmake clang makeBinaryWrapper ];
           LIBCLANG_PATH = "${pkgs.clang.cc.lib}/lib";
           ROCKSDB_LIB_DIR = "${pkgs.rocksdb}/lib";
         };
@@ -67,7 +67,13 @@
           buildInputs = [ rgit-grammar ] ++ commonArgs.buildInputs;
           TREE_SITTER_GRAMMAR_LIB_DIR = rgit-grammar;
         };
-        rgit = craneLib.buildPackage (buildArgs // { doCheck = false; });
+        rgit = craneLib.buildPackage (buildArgs // {
+          doCheck = false;
+          postInstall = ''
+            wrapProgram $out/bin/rgit \
+              --set PATH ${pkgs.lib.makeBinPath [ pkgs.gitMinimal ]}
+          '';
+        });
         treefmt = treefmt-nix.lib.evalModule pkgs ./treefmt.nix;
       in
       {

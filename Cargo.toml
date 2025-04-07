@@ -92,7 +92,7 @@ zlib-ng = ["flate2/zlib-ng", "gix/zlib-ng"]
 
 [build-dependencies]
 anyhow = "1.0"
-rsass = "0.28.0"
+rsass = "0.29.0"
 
 [package.metadata.deb]
 section = "web"

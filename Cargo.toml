@@ -85,7 +85,7 @@ unix_mode = "0.1"
 uuid = { version = "1.11", features = ["v4"] }
 v_htmlescape = { version = "0.15", features = ["bytes-buf"] }
 xxhash-rust = { version = "0.8.15", features = ["const_xxh3", "xxh3"] }
-yoke = { version = "0.7.5", features = ["derive"] }
+yoke = { version = "0.8.0", features = ["derive"] }
 
 [features]
 zlib-ng = ["flate2/zlib-ng", "gix/zlib-ng"]

@@ -21,6 +21,7 @@ pub struct Commit {
     pub author: Author,
     pub committer: Author,
     pub hash: [u8; 20],
+    pub tree: u64,
 }
 
 impl Commit {
@@ -29,6 +30,7 @@ impl Commit {
         commit: &CommitRef<'_>,
         author: SignatureRef<'_>,
         committer: SignatureRef<'_>,
+        tree: u64,
     ) -> Result<Self, anyhow::Error> {
         let message = commit.message();
 
@@ -40,6 +42,7 @@ impl Commit {
             hash: match oid {
                 ObjectId::Sha1(d) => d,
             },
+            tree,
         })
     }
 

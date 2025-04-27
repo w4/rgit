@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     ffi::OsStr,
     fmt::Debug,
     io::{BufRead, BufReader},
@@ -8,17 +8,29 @@ use std::{
 };
 
 use anyhow::Context;
-use gix::{bstr::ByteSlice, refs::Category, Reference};
+use gix::{
+    bstr::{BStr, ByteSlice},
+    objs::tree::EntryKind,
+    refs::Category,
+    url::Scheme,
+    ObjectId, Reference, Url,
+};
 use itertools::{Either, Itertools};
 use rocksdb::WriteBatch;
 use time::{OffsetDateTime, UtcOffset};
 use tracing::{error, info, info_span, instrument, warn};
+use xxhash_rust::xxh3::Xxh3;
 
-use crate::database::schema::{
-    commit::Commit,
-    repository::{ArchivedRepository, Repository, RepositoryId},
-    tag::{Tag, TagTree},
+use crate::{
+    database::schema::{
+        commit::Commit,
+        repository::{ArchivedRepository, Repository, RepositoryId},
+        tag::{Tag, TagTree},
+    },
+    git::{PathVisitor, PathVisitorHandler},
 };
+
+use super::schema::tree::{Tree, TreeItem, TreeItemKind};
 
 pub fn run(scan_path: &Path, repository_list: Option<&Path>, db: &Arc<rocksdb::DB>) {
     let span = info_span!("index_update");
@@ -161,6 +173,18 @@ fn update_repository_reflog(scan_path: &Path, db: Arc<rocksdb::DB>) {
             }
         };
 
+        let submodules = match git_repository.submodules() {
+            Ok(submodules) => submodules
+                .into_iter()
+                .flatten()
+                .filter_map(|v| Some((v.name().to_path_lossy().to_path_buf(), v.url().ok()?)))
+                .collect::<BTreeMap<_, _>>(),
+            Err(error) => {
+                error!(%error, "Failed to read submodules for {relative_path}");
+                continue;
+            }
+        };
+
         let mut valid_references = Vec::new();
 
         for reference in references {
@@ -189,6 +213,7 @@ fn update_repository_reflog(scan_path: &Path, db: Arc<rocksdb::DB>) {
                 db.clone(),
                 &git_repository,
                 false,
+                &submodules,
             ) {
                 error!(%error, "Failed to update reflog for {relative_path}@{:?}", valid_references.last());
             }
@@ -208,6 +233,7 @@ fn branch_index_update(
     db: Arc<rocksdb::DB>,
     git_repository: &gix::Repository,
     force_reindex: bool,
+    submodules: &BTreeMap<PathBuf, Url>,
 ) -> Result<(), anyhow::Error> {
     info!("Refreshing indexes");
 
@@ -238,6 +264,8 @@ fn branch_index_update(
         .into_iter()
         .rev();
 
+    let mut hasher = Xxh3::new();
+
     let tree_len = commit_tree.len()?;
     let mut seen = false;
     let mut i = 0;
@@ -267,11 +295,15 @@ fn branch_index_update(
             let author = commit.author();
             let committer = commit.committer();
 
-            Commit::new(oid, &commit, author, committer)?.insert(
+            let tree = git_repository.find_tree(commit.tree())?;
+            let tree_id = index_tree(&db, &mut batch, &tree, &mut hasher, submodules)?;
+
+            Commit::new(oid, &commit, author, committer, tree_id)?.insert(
                 &commit_tree,
                 tree_len + i,
                 &mut batch,
             )?;
+
             i += 1;
         }
 
@@ -289,10 +321,117 @@ fn branch_index_update(
             db,
             git_repository,
             true,
+            submodules,
         );
     }
 
     Ok(())
+}
+
+fn index_tree(
+    database: &rocksdb::DB,
+    batch: &mut WriteBatch,
+    tree: &gix::Tree<'_>,
+    hasher: &mut Xxh3,
+    submodules: &BTreeMap<PathBuf, Url>,
+) -> Result<u64, anyhow::Error> {
+    hasher.reset();
+    tree.traverse()
+        .breadthfirst(&mut PathVisitor::new(TreeHasherVisitor { hasher }))?;
+    let digest = hasher.digest();
+
+    if !TreeItem::contains(database, digest)? {
+        tree.traverse()
+            .breadthfirst(&mut PathVisitor::new(TreeItemIndexerVisitor {
+                buffer: Vec::new(),
+                digest,
+                database,
+                batch,
+                submodules,
+            }))?;
+    }
+
+    Tree {
+        indexed_tree_id: digest,
+    }
+    .insert(database, batch, tree.id)?;
+
+    Ok(digest)
+}
+
+/// Walks the entire tree and hashes all the (path, mode)s so trees can be deduplicated.
+///
+/// Note: unlike git's tree oid, this does not take into account blob contents.
+struct TreeHasherVisitor<'a> {
+    hasher: &'a mut Xxh3,
+}
+
+impl PathVisitorHandler for TreeHasherVisitor<'_> {
+    fn visit(
+        &mut self,
+        entry: &gix::objs::tree::EntryRef<'_>,
+        path: &BStr,
+    ) -> gix::traverse::tree::visit::Action {
+        self.hasher.update(path);
+        self.hasher.update(&entry.mode.to_ne_bytes());
+        gix::traverse::tree::visit::Action::Continue
+    }
+}
+
+struct TreeItemIndexerVisitor<'a> {
+    digest: u64,
+    buffer: Vec<u8>,
+    database: &'a rocksdb::DB,
+    batch: &'a mut WriteBatch,
+    submodules: &'a BTreeMap<PathBuf, Url>,
+}
+
+impl PathVisitorHandler for TreeItemIndexerVisitor<'_> {
+    fn visit(
+        &mut self,
+        entry: &gix::objs::tree::EntryRef<'_>,
+        path: &BStr,
+    ) -> gix::traverse::tree::visit::Action {
+        let kind = match entry.mode.kind() {
+            EntryKind::Blob | EntryKind::BlobExecutable | EntryKind::Link => TreeItemKind::File,
+            EntryKind::Commit => {
+                let Some(mut url) = self
+                    .submodules
+                    .get(&path.to_path_lossy().into_owned())
+                    .cloned()
+                else {
+                    return gix::traverse::tree::visit::Action::Continue;
+                };
+
+                if matches!(url.scheme, Scheme::Git | Scheme::Ssh) {
+                    url.scheme = Scheme::Https;
+                }
+
+                TreeItemKind::Submodule(match entry.oid.to_owned() {
+                    ObjectId::Sha1(oid) => super::schema::tree::Submodule {
+                        url: url.to_string(),
+                        oid,
+                    },
+                })
+            }
+            EntryKind::Tree => TreeItemKind::Tree,
+        };
+
+        TreeItem {
+            mode: entry.mode.0,
+            kind,
+        }
+        .insert(
+            &mut self.buffer,
+            self.digest,
+            path,
+            self.database,
+            self.batch,
+        )
+        .expect("failed to insert TreeItem");
+
+        gix::traverse::tree::visit::Action::Continue
+    }
 }
 
 #[instrument(skip(db))]
@@ -311,11 +450,24 @@ fn update_repository_tags(scan_path: &Path, db: Arc<rocksdb::DB>) {
             continue;
         };
 
+        let submodules = match git_repository.submodules() {
+            Ok(submodules) => submodules
+                .into_iter()
+                .flatten()
+                .filter_map(|v| Some((v.name().to_path_lossy().to_path_buf(), v.url().ok()?)))
+                .collect::<BTreeMap<_, _>>(),
+            Err(error) => {
+                error!(%error, "Failed to read submodules for {relative_path}");
+                continue;
+            }
+        };
+
         if let Err(error) = tag_index_scan(
             &relative_path,
             db_repository.get(),
             db.clone(),
             &git_repository,
+            &submodules,
         ) {
             error!(%error, "Failed to update tags for {relative_path}");
         }
@@ -328,6 +480,7 @@ fn tag_index_scan(
     db_repository: &ArchivedRepository,
     db: Arc<rocksdb::DB>,
     git_repository: &gix::Repository,
+    submodules: &BTreeMap<PathBuf, Url>,
 ) -> Result<(), anyhow::Error> {
     let tag_tree = db_repository.tag_tree(db);
 
@@ -343,7 +496,7 @@ fn tag_index_scan(
 
     // insert any git tags that are missing from the index
     for tag_name in git_tags.difference(&indexed_tags) {
-        tag_index_update(tag_name, git_repository, &tag_tree)?;
+        tag_index_update(tag_name, git_repository, &tag_tree, submodules)?;
     }
 
     // remove any extra tags that the index has
@@ -360,15 +513,31 @@ fn tag_index_update(
     tag_name: &str,
     git_repository: &gix::Repository,
     tag_tree: &TagTree,
+    submodules: &BTreeMap<PathBuf, Url>,
 ) -> Result<(), anyhow::Error> {
     let mut reference = git_repository
         .find_reference(tag_name)
         .context("Failed to read newly discovered tag")?;
 
+    let tree_id = if let Ok(tree) = reference.peel_to_tree() {
+        let mut batch = WriteBatch::default();
+        let tree_id = index_tree(
+            &tag_tree.db,
+            &mut batch,
+            &tree,
+            &mut Xxh3::new(),
+            submodules,
+        )?;
+        tag_tree.db.write_without_wal(batch)?;
+        Some(tree_id)
+    } else {
+        None
+    };
+
     if let Ok(tag) = reference.peel_to_tag() {
         info!("Inserting newly discovered tag to index");
 
-        Tag::new(tag.tagger()?)?.insert(tag_tree, tag_name)?;
+        Tag::new(tag.tagger()?, tree_id)?.insert(tag_tree, tag_name)?;
     }
 
     Ok(())
@@ -420,7 +589,7 @@ fn discover_repositories(
     discovered_repos: &mut Vec<(PathBuf, gix::Repository)>,
 ) {
     let dirs = if let Some(repo_list) = repository_list {
-        let mut repo_list = match std::fs::File::open(&repo_list) {
+        let repo_list = match std::fs::File::open(repo_list) {
             Ok(v) => BufReader::new(v).lines(),
             Err(error) => {
                 error!(%error, "Failed to open repository list file");
@@ -430,7 +599,7 @@ fn discover_repositories(
 
         let mut out = Vec::new();
 
-        while let Some(line) = repo_list.next() {
+        for line in repo_list {
             let line = match line {
                 Ok(v) => v,
                 Err(error) => {

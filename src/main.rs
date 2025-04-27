@@ -23,7 +23,10 @@ use axum::{
 };
 use clap::Parser;
 use const_format::formatcp;
-use database::schema::SCHEMA_VERSION;
+use database::schema::{
+    prefixes::{TREE_FAMILY, TREE_ITEM_FAMILY},
+    SCHEMA_VERSION,
+};
 use rocksdb::{Options, SliceTransform};
 use tokio::{
     net::TcpListener,
@@ -258,6 +261,11 @@ fn open_db(args: &Args) -> Result<Arc<rocksdb::DB>, anyhow::Error> {
             std::mem::size_of::<u64>(),
         )); // repository id prefix
 
+        let mut tree_item_family_options = Options::default();
+        tree_item_family_options.set_prefix_extractor(SliceTransform::create_fixed_prefix(
+            std::mem::size_of::<u64>() + std::mem::size_of::<usize>(),
+        ));
+
         let db = rocksdb::DB::open_cf_with_opts(
             &db_options,
             &args.db_store,
@@ -267,6 +275,8 @@ fn open_db(args: &Args) -> Result<Arc<rocksdb::DB>, anyhow::Error> {
                 (TAG_FAMILY, tag_family_options),
                 (REFERENCE_FAMILY, Options::default()),
                 (COMMIT_COUNT_FAMILY, Options::default()),
+                (TREE_FAMILY, Options::default()),
+                (TREE_ITEM_FAMILY, tree_item_family_options),
             ],
         )?;
 

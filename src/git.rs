@@ -7,18 +7,17 @@ use gix::{
     actor::SignatureRef,
     bstr::{BStr, BString, ByteSlice, ByteVec},
     diff::blob::{platform::prepare_diff::Operation, Sink},
-    object::{tree::EntryKind, Kind},
+    object::Kind,
     objs::{tree::EntryRef, CommitRef, TagRef},
     prelude::TreeEntryRefExt,
     traverse::tree::visit::Action,
-    url::Scheme,
-    ObjectId, ThreadSafeRepository, Url,
+    ObjectId, ThreadSafeRepository,
 };
-use itertools::{Either, Itertools};
+use itertools::Either;
 use moka::future::Cache;
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, VecDeque},
+    collections::VecDeque,
     ffi::OsStr,
     fmt::{self, Arguments, Write},
     io::ErrorKind,
@@ -121,7 +120,7 @@ impl OpenRepository {
         path: Option<PathBuf>,
         tree_id: Option<&str>,
         formatted: bool,
-    ) -> Result<PathDestination> {
+    ) -> Result<FileWithContent> {
         let tree_id = tree_id
             .map(ObjectId::from_str)
             .transpose()
@@ -154,8 +153,6 @@ impl OpenRepository {
                     Kind::Blob => {
                         let mut blob = object.into_blob();
 
-                        let size = blob.data.len();
-
                         let content = match (formatted, simdutf8::basic::from_utf8(&blob.data)) {
                             (true, Err(_)) => Content::Binary(vec![]),
                             (true, Ok(data)) => Content::Text(Cow::Owned(format_file(
@@ -168,107 +165,13 @@ impl OpenRepository {
                             })),
                         };
 
-                        return Ok(PathDestination::File(FileWithContent {
-                            metadata: File {
-                                mode: item.mode().0,
-                                size,
-                                path: path.clone(),
-                                name: item.filename().to_string(),
-                            },
-                            content,
-                        }));
-                    }
-                    Kind::Tree => {
-                        tree = object.into_tree();
+                        return Ok(FileWithContent { content });
                     }
                     _ => anyhow::bail!("bad object of type {:?}", object.kind),
                 }
             }
 
-            let mut tree_items = Vec::new();
-            let submodules = repo
-                .submodules()?
-                .into_iter()
-                .flatten()
-                .filter_map(|v| Some((v.name().to_path_lossy().to_path_buf(), v.url().ok()?)))
-                .collect::<BTreeMap<_, _>>();
-
-            for item in tree.iter() {
-                let item = item?;
-
-                let path = path
-                    .clone()
-                    .unwrap_or_default()
-                    .join(item.filename().to_path_lossy());
-
-                match item.mode().kind() {
-                    EntryKind::Tree
-                    | EntryKind::Blob
-                    | EntryKind::BlobExecutable
-                    | EntryKind::Link => {
-                        let mut object = item
-                            .object()
-                            .context("Expected item in tree to be object but it wasn't")?;
-
-                        tree_items.push(match object.kind {
-                            Kind::Blob => TreeItem::File(File {
-                                mode: item.mode().0,
-                                size: object.into_blob().data.len(),
-                                path,
-                                name: item.filename().to_string(),
-                            }),
-                            Kind::Tree => {
-                                let mut children = PathBuf::new();
-
-                                // if the tree only has one child, flatten it down
-                                while let Ok(Some(Ok(item))) = object
-                                    .try_into_tree()
-                                    .iter()
-                                    .flat_map(gix::Tree::iter)
-                                    .at_most_one()
-                                {
-                                    let nested_object = item.object().context(
-                                        "Expected item in tree to be object but it wasn't",
-                                    )?;
-
-                                    if nested_object.kind != Kind::Tree {
-                                        break;
-                                    }
-
-                                    object = nested_object;
-                                    children.push(item.filename().to_path_lossy());
-                                }
-
-                                TreeItem::Tree(Tree {
-                                    mode: item.mode().0,
-                                    path,
-                                    children,
-                                    name: item.filename().to_string(),
-                                })
-                            }
-                            _ => continue,
-                        });
-                    }
-                    EntryKind::Commit => {
-                        if let Some(mut url) = submodules.get(path.as_path()).cloned() {
-                            if matches!(url.scheme, Scheme::Git | Scheme::Ssh) {
-                                url.scheme = Scheme::Https;
-                            }
-
-                            tree_items.push(TreeItem::Submodule(Submodule {
-                                mode: item.mode().0,
-                                name: item.filename().to_string(),
-                                url,
-                                oid: item.object_id(),
-                            }));
-
-                            continue;
-                        }
-                    }
-                }
-            }
-
-            Ok(PathDestination::Tree(tree_items))
+            anyhow::bail!("bad object");
         })
         .await
         .context("Failed to join Tokio task")?
@@ -442,15 +345,15 @@ impl OpenRepository {
             }
 
             let buffer = BytesMut::with_capacity(BUFFER_CAP + 1024);
-            let mut visitor = ArchivalVisitor {
+            let mut visitor = PathVisitor::new(ArchivalVisitor {
                 repository: &repo,
                 res,
                 archive: Builder::new(GzEncoder::new(buffer.writer(), flate2::Compression::fast())),
-                path_deque: VecDeque::new(),
-                path: BString::default(),
-            };
+            });
 
             tree.traverse().breadthfirst(&mut visitor)?;
+
+            let visitor = visitor.into_inner();
 
             visitor.res.blocking_send(Ok(visitor
                 .archive
@@ -515,64 +418,18 @@ fn take_oid(v: ObjectId) -> [u8; 20] {
 
 const BUFFER_CAP: usize = 512 * 1024;
 
-pub struct ArchivalVisitor<'a> {
+pub trait PathVisitorHandler {
+    fn visit(&mut self, entry: &EntryRef<'_>, path: &BStr) -> Action;
+}
+
+struct ArchivalVisitor<'a> {
     repository: &'a gix::Repository,
     res: tokio::sync::mpsc::Sender<Result<Bytes, anyhow::Error>>,
     archive: Builder<GzEncoder<Writer<BytesMut>>>,
-    path_deque: VecDeque<BString>,
-    path: BString,
 }
 
-impl ArchivalVisitor<'_> {
-    fn pop_element(&mut self) {
-        if let Some(pos) = memchr::memrchr(b'/', &self.path) {
-            self.path.resize(pos, 0);
-        } else {
-            self.path.clear();
-        }
-    }
-
-    fn push_element(&mut self, name: &BStr) {
-        if !self.path.is_empty() {
-            self.path.push(b'/');
-        }
-        self.path.push_str(name);
-    }
-}
-
-impl gix::traverse::tree::Visit for ArchivalVisitor<'_> {
-    fn pop_front_tracked_path_and_set_current(&mut self) {
-        self.path = self
-            .path_deque
-            .pop_front()
-            .expect("every call is matched with push_tracked_path_component");
-    }
-
-    fn pop_back_tracked_path_and_set_current(&mut self) {
-        self.path = self
-            .path_deque
-            .pop_back()
-            .expect("every call is matched with push_tracked_path_component");
-    }
-
-    fn push_back_tracked_path_component(&mut self, component: &BStr) {
-        self.push_element(component);
-        self.path_deque.push_back(self.path.clone());
-    }
-
-    fn push_path_component(&mut self, component: &BStr) {
-        self.push_element(component);
-    }
-
-    fn pop_path_component(&mut self) {
-        self.pop_element();
-    }
-
-    fn visit_tree(&mut self, _entry: &EntryRef<'_>) -> Action {
-        Action::Continue
-    }
-
-    fn visit_nontree(&mut self, entry: &EntryRef<'_>) -> Action {
+impl PathVisitorHandler for ArchivalVisitor<'_> {
+    fn visit(&mut self, entry: &EntryRef<'_>, path: &BStr) -> Action {
         let entry = entry.attach(self.repository);
 
         let Ok(object) = entry.object() else {
@@ -586,7 +443,7 @@ impl gix::traverse::tree::Visit for ArchivalVisitor<'_> {
         let blob = object.into_blob();
 
         let mut header = tar::Header::new_gnu();
-        if let Err(error) = header.set_path(self.path.to_path_lossy()) {
+        if let Err(error) = header.set_path(path.to_path_lossy()) {
             warn!(%error, "Attempted to write invalid path to archive");
             return Action::Continue;
         }
@@ -609,6 +466,78 @@ impl gix::traverse::tree::Visit for ArchivalVisitor<'_> {
         }
 
         Action::Continue
+    }
+}
+
+pub struct PathVisitor<T> {
+    path_deque: VecDeque<BString>,
+    path: BString,
+    inner: T,
+}
+
+impl<T> PathVisitor<T> {
+    pub fn new(inner: T) -> Self {
+        Self {
+            path_deque: VecDeque::new(),
+            path: BString::default(),
+            inner,
+        }
+    }
+
+    pub fn into_inner(self) -> T {
+        self.inner
+    }
+
+    fn pop_element(&mut self) {
+        if let Some(pos) = memchr::memrchr(b'/', &self.path) {
+            self.path.resize(pos, 0);
+        } else {
+            self.path.clear();
+        }
+    }
+
+    fn push_element(&mut self, name: &BStr) {
+        if name.is_empty() {
+            return;
+        }
+        if !self.path.is_empty() {
+            self.path.push(b'/');
+        }
+        self.path.push_str(name);
+    }
+}
+
+impl<T: PathVisitorHandler> gix::traverse::tree::Visit for PathVisitor<T> {
+    fn pop_front_tracked_path_and_set_current(&mut self) {
+        self.path = self
+            .path_deque
+            .pop_front()
+            .expect("every call is matched with push_tracked_path_component");
+    }
+
+    fn pop_back_tracked_path_and_set_current(&mut self) {
+        self.path = self.path_deque.pop_back().unwrap_or_default();
+    }
+
+    fn push_back_tracked_path_component(&mut self, component: &BStr) {
+        self.push_element(component);
+        self.path_deque.push_back(self.path.clone());
+    }
+
+    fn push_path_component(&mut self, component: &BStr) {
+        self.push_element(component);
+    }
+
+    fn pop_path_component(&mut self) {
+        self.pop_element();
+    }
+
+    fn visit_tree(&mut self, entry: &EntryRef<'_>) -> Action {
+        self.inner.visit(entry, self.path.as_ref())
+    }
+
+    fn visit_nontree(&mut self, entry: &EntryRef<'_>) -> Action {
+        self.inner.visit(entry, self.path.as_ref())
     }
 }
 
@@ -636,45 +565,9 @@ pub enum ReadmeFormat {
     Plaintext,
 }
 
-pub enum PathDestination {
-    Tree(Vec<TreeItem>),
-    File(FileWithContent),
-}
-
-pub enum TreeItem {
-    Tree(Tree),
-    File(File),
-    Submodule(Submodule),
-}
-
-#[derive(Debug)]
-pub struct Submodule {
-    pub mode: u16,
-    pub name: String,
-    pub url: Url,
-    pub oid: ObjectId,
-}
-
-#[derive(Debug)]
-pub struct Tree {
-    pub mode: u16,
-    pub name: String,
-    pub children: PathBuf,
-    pub path: PathBuf,
-}
-
-#[derive(Debug)]
-pub struct File {
-    pub mode: u16,
-    pub size: usize,
-    pub name: String,
-    pub path: PathBuf,
-}
-
 #[derive(Debug)]
 #[allow(unused)]
 pub struct FileWithContent {
-    pub metadata: File,
     pub content: Content,
 }
 

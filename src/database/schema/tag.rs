@@ -15,12 +15,17 @@ use crate::database::schema::{
 #[derive(Serialize, Archive, Debug, Yokeable)]
 pub struct Tag {
     pub tagger: Option<Author>,
+    pub tree_id: Option<u64>,
 }
 
 impl Tag {
-    pub fn new(tagger: Option<SignatureRef<'_>>) -> Result<Self, anyhow::Error> {
+    pub fn new(
+        tagger: Option<SignatureRef<'_>>,
+        tree_id: Option<u64>,
+    ) -> Result<Self, anyhow::Error> {
         Ok(Self {
             tagger: tagger.map(TryFrom::try_from).transpose()?,
+            tree_id,
         })
     }
 
@@ -30,7 +35,7 @@ impl Tag {
 }
 
 pub struct TagTree {
-    db: Arc<rocksdb::DB>,
+    pub db: Arc<rocksdb::DB>,
     prefix: RepositoryId,
 }
 

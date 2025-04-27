@@ -37,8 +37,8 @@ pub fn timeago(s: impl Into<Timestamp>) -> Result<String, askama::Error> {
         .convert((OffsetDateTime::now_utc() - s.into().0).try_into().unwrap()))
 }
 
-pub fn file_perms(s: &u16) -> Result<String, askama::Error> {
-    Ok(unix_mode::to_string(u32::from(*s)))
+pub fn file_perms(s: u16) -> Result<String, askama::Error> {
+    Ok(unix_mode::to_string(u32::from(s)))
 }
 
 pub struct DisplayHexBuffer<const N: usize>(pub const_hex::Buffer<N>);

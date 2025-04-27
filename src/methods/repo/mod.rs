@@ -275,6 +275,12 @@ impl From<anyhow::Error> for Error {
     }
 }
 
+impl From<Error> for anyhow::Error {
+    fn from(value: Error) -> Self {
+        value.0
+    }
+}
+
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         (StatusCode::INTERNAL_SERVER_ERROR, format!("{:?}", self.0)).into_response()

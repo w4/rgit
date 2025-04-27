@@ -97,6 +97,9 @@
 
         devShells.default = craneLib.devShell {
           checks = self.checks.${system};
+          packages = with pkgs; [ rust-analyzer ];
+          RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
+          TREE_SITTER_GRAMMAR_LIB_DIR = rgit-grammar;
         };
 
         nixosModules.default = { config, lib, pkgs, ... }:

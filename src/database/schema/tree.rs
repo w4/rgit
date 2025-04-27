@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use anyhow::Context;
 use gix::{bstr::BStr, ObjectId};
 use itertools::{Either, Itertools};
@@ -50,6 +52,61 @@ impl Tree {
     }
 }
 
+#[derive(Serialize, Archive, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
+#[rkyv(derive(Ord, PartialOrd, Eq, PartialEq, Debug))]
+#[rkyv(compare(PartialOrd, PartialEq))]
+pub struct TreeKey(pub String);
+
+#[derive(Serialize, Archive, Debug, PartialEq, Eq, Default, Yokeable)]
+pub struct SortedTree(pub BTreeMap<TreeKey, SortedTreeItem>);
+
+impl SortedTree {
+    pub fn insert(
+        &self,
+        digest: u64,
+        database: &DB,
+        batch: &mut WriteBatch,
+    ) -> Result<(), anyhow::Error> {
+        let cf = database
+            .cf_handle(TREE_ITEM_FAMILY)
+            .context("tree column family missing")?;
+
+        batch.put_cf(
+            cf,
+            digest.to_ne_bytes(),
+            rkyv::to_bytes::<rkyv::rancor::Error>(self)?,
+        );
+
+        Ok(())
+    }
+
+    pub fn get(digest: u64, database: &DB) -> Result<Option<YokedSortedTree>, anyhow::Error> {
+        let cf = database
+            .cf_handle(TREE_ITEM_FAMILY)
+            .expect("tree column family missing");
+
+        database
+            .get_cf(cf, digest.to_ne_bytes())?
+            .map(|data| {
+                Yoke::try_attach_to_cart(data.into_boxed_slice(), |data| {
+                    rkyv::access::<_, rkyv::rancor::Error>(data)
+                })
+            })
+            .transpose()
+            .context("failed to parse full tree")
+    }
+}
+
+#[derive(Serialize, Archive, Debug, PartialEq, Eq)]
+#[rkyv(
+    bytecheck(bounds(__C: rkyv::validation::ArchiveContext)),
+    serialize_bounds(__S: rkyv::ser::Writer + rkyv::ser::Allocator, __S::Error: rkyv::rancor::Source),
+)]
+pub enum SortedTreeItem {
+    File,
+    Directory(#[rkyv(omit_bounds)] SortedTree),
+}
+
 #[derive(Serialize, Archive, Debug, PartialEq, Eq, Hash)]
 pub struct Submodule {
     pub url: String,
@@ -69,6 +126,7 @@ pub struct TreeItem {
     pub kind: TreeItemKind,
 }
 
+pub type YokedSortedTree = Yoked<&'static <SortedTree as Archive>::Archived>;
 pub type YokedTreeItem = Yoked<&'static <TreeItem as Archive>::Archived>;
 pub type YokedTreeItemKey = Yoked<&'static [u8]>;
 pub type YokedTreeItemKeyUtf8 = Yoked<&'static str>;
@@ -125,41 +183,51 @@ impl TreeItem {
     pub fn find_prefix<'a>(
         database: &'a DB,
         digest: u64,
-        prefix: &[u8],
+        prefix: Option<&[u8]>,
     ) -> impl Iterator<Item = Result<(YokedTreeItemKey, YokedTreeItem), anyhow::Error>> + use<'a>
     {
         let cf = database
             .cf_handle(TREE_ITEM_FAMILY)
             .expect("tree column family missing");
 
-        let (iterator, key) = if prefix.is_empty() {
-            let mut buffer = [0_u8; std::mem::size_of::<u64>() + std::mem::size_of::<usize>()];
-            buffer[..std::mem::size_of::<u64>()].copy_from_slice(&digest.to_ne_bytes());
-            buffer[std::mem::size_of::<u64>()..].copy_from_slice(&0_usize.to_be_bytes());
+        let (iterator, key) = match prefix {
+            None => {
+                let iterator = database.prefix_iterator_cf(cf, digest.to_ne_bytes());
 
-            let iterator = database.prefix_iterator_cf(cf, buffer);
+                (iterator, Either::Left(Either::Left(digest.to_be_bytes())))
+            }
+            Some([]) => {
+                let mut buffer = [0_u8; std::mem::size_of::<u64>() + std::mem::size_of::<usize>()];
+                buffer[..std::mem::size_of::<u64>()].copy_from_slice(&digest.to_ne_bytes());
+                buffer[std::mem::size_of::<u64>()..].copy_from_slice(&0_usize.to_be_bytes());
 
-            (iterator, Either::Left(buffer))
-        } else {
-            let mut buffer = Vec::with_capacity(
-                std::mem::size_of::<u64>() + prefix.len() + std::mem::size_of::<usize>(),
-            );
-            buffer.extend_from_slice(&digest.to_ne_bytes());
-            buffer
-                .extend_from_slice(&(memchr::memchr_iter(b'/', prefix).count() + 1).to_be_bytes());
-            buffer.extend_from_slice(prefix);
-            buffer.push(b'/');
+                let iterator = database.prefix_iterator_cf(cf, buffer);
 
-            let iterator = database.prefix_iterator_cf(cf, &buffer);
+                (iterator, Either::Left(Either::Right(buffer)))
+            }
+            Some(prefix) => {
+                let mut buffer = Vec::with_capacity(
+                    std::mem::size_of::<u64>() + prefix.len() + std::mem::size_of::<usize>(),
+                );
+                buffer.extend_from_slice(&digest.to_ne_bytes());
+                buffer.extend_from_slice(
+                    &(memchr::memchr_iter(b'/', prefix).count() + 1).to_be_bytes(),
+                );
+                buffer.extend_from_slice(prefix);
+                buffer.push(b'/');
 
-            (iterator, Either::Right(buffer))
+                let iterator = database.prefix_iterator_cf(cf, &buffer);
+
+                (iterator, Either::Right(buffer))
+            }
         };
 
         iterator
             .take_while(move |v| {
                 v.as_ref().is_ok_and(|(k, _)| {
                     k.starts_with(match key.as_ref() {
-                        Either::Left(v) => v.as_ref(),
+                        Either::Left(Either::Right(v)) => v.as_ref(),
+                        Either::Left(Either::Left(v)) => v.as_ref(),
                         Either::Right(v) => v.as_ref(),
                     })
                 })

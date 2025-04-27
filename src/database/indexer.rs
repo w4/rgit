@@ -30,7 +30,7 @@ use crate::{
     git::{PathVisitor, PathVisitorHandler},
 };
 
-use super::schema::tree::{Tree, TreeItem, TreeItemKind};
+use super::schema::tree::{SortedTree, SortedTreeItem, Tree, TreeItem, TreeItemKind, TreeKey};
 
 pub fn run(scan_path: &Path, repository_list: Option<&Path>, db: &Arc<rocksdb::DB>) {
     let span = info_span!("index_update");
@@ -341,6 +341,8 @@ fn index_tree(
     let digest = hasher.digest();
 
     if !TreeItem::contains(database, digest)? {
+        let mut sorted_out = SortedTree::default();
+
         tree.traverse()
             .breadthfirst(&mut PathVisitor::new(TreeItemIndexerVisitor {
                 buffer: Vec::new(),
@@ -348,7 +350,10 @@ fn index_tree(
                 database,
                 batch,
                 submodules,
+                sorted: &mut sorted_out,
             }))?;
+
+        sorted_out.insert(digest, database, batch)?;
     }
 
     Tree {
@@ -381,6 +386,7 @@ impl PathVisitorHandler for TreeHasherVisitor<'_> {
 struct TreeItemIndexerVisitor<'a> {
     digest: u64,
     buffer: Vec<u8>,
+    sorted: &'a mut SortedTree,
     database: &'a rocksdb::DB,
     batch: &'a mut WriteBatch,
     submodules: &'a BTreeMap<PathBuf, Url>,
@@ -416,6 +422,27 @@ impl PathVisitorHandler for TreeItemIndexerVisitor<'_> {
             }
             EntryKind::Tree => TreeItemKind::Tree,
         };
+
+        // TODO: this could be more optimised doing a recursive DFS to not have to keep diving deep into self.sorted
+        if !entry.mode.is_tree() {
+            let mut tree = &mut *self.sorted;
+            let mut offset = 0;
+            for end in memchr::memchr_iter(b'/', path) {
+                let path = &path[offset..end];
+                offset = end + 1;
+
+                tree = match tree
+                    .0
+                    .entry(TreeKey(path.to_string()))
+                    .or_insert(SortedTreeItem::Directory(SortedTree::default()))
+                {
+                    SortedTreeItem::Directory(dir) => dir,
+                    SortedTreeItem::File => panic!("a file is somehow not in a directory"),
+                };
+            }
+            tree.0
+                .insert(TreeKey(path[offset..].to_string()), SortedTreeItem::File);
+        }
 
         TreeItem {
             mode: entry.mode.0,

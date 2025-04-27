@@ -263,7 +263,7 @@ fn open_db(args: &Args) -> Result<Arc<rocksdb::DB>, anyhow::Error> {
 
         let mut tree_item_family_options = Options::default();
         tree_item_family_options.set_prefix_extractor(SliceTransform::create_fixed_prefix(
-            std::mem::size_of::<u64>() + std::mem::size_of::<usize>(),
+            std::mem::size_of::<u64>(),
         ));
 
         let db = rocksdb::DB::open_cf_with_opts(

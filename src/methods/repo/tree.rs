@@ -11,7 +11,8 @@ use std::{
 };
 
 use crate::database::schema::tree::{
-    ArchivedTreeItemKind, Tree, TreeItem, YokedTreeItem, YokedTreeItemKeyUtf8,
+    ArchivedSortedTree, ArchivedSortedTreeItem, ArchivedTreeItemKind, SortedTree, Tree, TreeItem,
+    YokedSortedTree, YokedTreeItem, YokedTreeItemKeyUtf8,
 };
 use crate::{
     git::FileWithContent,
@@ -52,6 +53,24 @@ impl Display for UriQuery {
 }
 
 #[derive(Template)]
+#[template(path = "partials/file_tree.html")]
+pub struct FileTree<'a> {
+    pub inner: &'a ArchivedSortedTree,
+    pub base: &'a Repository,
+    pub path_stack: String,
+}
+
+impl<'a> FileTree<'a> {
+    pub fn new(inner: &'a ArchivedSortedTree, base: &'a Repository, path_stack: String) -> Self {
+        Self {
+            inner,
+            base,
+            path_stack,
+        }
+    }
+}
+
+#[derive(Template)]
 #[template(path = "repo/tree.html")]
 #[allow(clippy::module_name_repetitions)]
 pub struct TreeView {
@@ -69,6 +88,7 @@ pub struct FileView {
     pub repo_path: PathBuf,
     pub file: FileWithContent,
     pub branch: Option<Arc<str>>,
+    pub full_tree: YokedSortedTree,
 }
 
 enum LookupResult {
@@ -81,11 +101,11 @@ pub async fn handle(
     Extension(RepositoryPath(repository_path)): Extension<RepositoryPath>,
     Extension(ChildPath(child_path)): Extension<ChildPath>,
     Extension(git): Extension<Arc<Git>>,
-    Extension(db): Extension<Arc<rocksdb::DB>>,
+    Extension(db_orig): Extension<Arc<rocksdb::DB>>,
     Query(query): Query<UriQuery>,
 ) -> Result<impl IntoResponse> {
-    // TODO: bit messy
-    let (repo, query, child_path, lookup_result) = tokio::task::spawn_blocking(move || {
+    let db = db_orig.clone();
+    let (query, repo, tree_id) = tokio::task::spawn_blocking(move || {
         let tree_id = if let Some(id) = query.id.as_deref() {
             let hex = const_hex::decode_to_array(id).context("Failed to parse tree hash")?;
             Tree::find(&db, ObjectId::Sha1(hex))
@@ -101,12 +121,19 @@ pub async fn handle(
             commit.get().tree.to_native()
         };
 
+        Ok::<_, anyhow::Error>((query, repo, tree_id))
+    })
+    .await
+    .context("failed to join tree_id task")??;
+
+    let db = db_orig.clone();
+    let (repo, child_path, lookup_result) = tokio::task::spawn_blocking(move || {
         if let Some(path) = &child_path {
             if let Some(item) =
                 TreeItem::find_exact(&db, tree_id, path.as_os_str().as_encoded_bytes())?
             {
                 if let ArchivedTreeItemKind::File = item.get().kind {
-                    return Ok((repo, query, child_path, LookupResult::RealPath));
+                    return Ok((repo, child_path, LookupResult::RealPath));
                 }
             }
         }
@@ -116,7 +143,7 @@ pub async fn handle(
             .map(|v| v.as_os_str().as_encoded_bytes())
             .unwrap_or_default();
 
-        let tree_items = TreeItem::find_prefix(&db, tree_id, path)
+        let tree_items = TreeItem::find_prefix(&db, tree_id, Some(path))
             // don't take the current path the user is on
             .filter_ok(|(k, _)| !k.get()[path.len()..].is_empty())
             // only take direct descendents
@@ -137,10 +164,10 @@ pub async fn handle(
             bail!("Path doesn't exist in tree");
         }
 
-        Ok::<_, anyhow::Error>((repo, query, child_path, LookupResult::Children(tree_items)))
+        Ok::<_, anyhow::Error>((repo, child_path, LookupResult::Children(tree_items)))
     })
     .await
-    .context("Failed to join on task")??;
+    .context("failed to join on tokio task")??;
 
     Ok(match lookup_result {
         LookupResult::RealPath => {
@@ -152,11 +179,18 @@ pub async fn handle(
             if query.raw {
                 ResponseEither::Right(file.content)
             } else {
+                let db = db_orig.clone();
+                let full_tree = tokio::task::spawn_blocking(move || SortedTree::get(tree_id, &db))
+                    .await
+                    .context("failed to join on tokio task")??
+                    .context("missing file tree")?;
+
                 ResponseEither::Left(ResponseEither::Right(into_response(FileView {
                     repo,
                     file,
                     branch: query.branch,
                     repo_path: child_path.unwrap_or_default(),
+                    full_tree,
                 })))
             }
         }

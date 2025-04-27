@@ -36,8 +36,10 @@ use self::{
     tag::handle as handle_tag,
     tree::handle as handle_tree,
 };
-use crate::database::schema::tag::YokedString;
-use crate::database::schema::{commit::YokedCommit, tag::YokedTag};
+use crate::database::schema::{
+    commit::YokedCommit,
+    tag::{YokedString, YokedTag},
+};
 
 pub const DEFAULT_BRANCHES: [&str; 2] = ["refs/heads/master", "refs/heads/main"];
 

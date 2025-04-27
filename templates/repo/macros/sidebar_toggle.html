@@ -1,0 +1,9 @@
+{%- macro sidebar_toggle(screenreader_text) -%}
+<label class="sidebar-toggle">
+    <input type="checkbox">
+    <span></span>
+    <span></span>
+    <span></span>
+    <span class="sr-only">{{ screenreader_text }}</span>
+</label>
+{%- endmacro -%}

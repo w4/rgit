@@ -10,4 +10,4 @@ pub mod tree;
 
 pub type Yoked<T> = Yoke<T, Box<[u8]>>;
 
-pub const SCHEMA_VERSION: &str = "4";
+pub const SCHEMA_VERSION: &str = "5";

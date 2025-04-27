@@ -1,5 +1,6 @@
 {% import "macros/link.html" as link %}
 {% import "macros/breadcrumbs.html" as breadcrumbs %}
+{% import "macros/sidebar_toggle.html" as sidebar_toggle %}
 {% extends "repo/base.html" %}
 
 {% block head %}
@@ -18,12 +19,22 @@
 {% endblock %}
 
 {% block content %}
-<pre>
-    {%- match file.content -%}
-        {%- when crate::git::Content::Text with (content) -%}
-            {{- content|safe -}}
-        {%- when crate::git::Content::Binary with (_) -%}
-            &lt;binary file not displayed&gt;
-    {%- endmatch -%}
-</pre>
+{% call sidebar_toggle::sidebar_toggle("Open file browser") %}
+
+<div class="two-col">
+    <div class="sidebar">
+        {{ FileTree::new(full_tree.get(), &self.repo, Default::default()).render()?|safe }}
+    </div>
+
+    <div>
+        <pre>
+            {%- match file.content -%}
+                {%- when crate::git::Content::Text with (content) -%}
+                    {{- content|safe -}}
+                {%- when crate::git::Content::Binary with (_) -%}
+                    &lt;binary file not displayed&gt;
+            {%- endmatch -%}
+        </pre>
+    </div>
+</div>
 {% endblock %}

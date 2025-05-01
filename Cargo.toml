@@ -60,7 +60,7 @@ rkyv = { version = "0.8", features = [
   "bytecheck",
   "alloc",
 ], default-features = false }
-rocksdb = { version = "0.22", default-features = false, features = ["snappy"] }
+rocksdb = { version = "0.23", default-features = false, features = ["snappy"] }
 serde = { version = "1.0", features = ["derive", "rc"] }
 simdutf8 = "0.1.5"
 tar = { version = "0.4", default-features = false }

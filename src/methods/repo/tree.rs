@@ -94,6 +94,7 @@ pub struct TreeView {
     pub query: UriQuery,
     pub repo_path: PathBuf,
     pub branch: Option<Arc<str>>,
+    pub full_tree: YokedSortedTree,
 }
 
 #[derive(Template)]
@@ -212,12 +213,19 @@ pub async fn handle(
             }
         }
         LookupResult::Children(items) => {
+            let db = db_orig.clone();
+            let full_tree = tokio::task::spawn_blocking(move || SortedTree::get(tree_id, &db))
+                .await
+                .context("failed to join on tokio task")??
+                .context("missing file tree")?;
+
             ResponseEither::Left(ResponseEither::Left(into_response(TreeView {
                 repo,
                 items,
                 branch: query.branch.clone(),
                 query,
                 repo_path: child_path.unwrap_or_default(),
+                full_tree,
             })))
         }
     })

@@ -1,4 +1,5 @@
 {% import "macros/breadcrumbs.html" as breadcrumbs %}
+{% import "macros/sidebar_toggle.html" as sidebar_toggle %}
 {% extends "repo/base.html" %}
 
 {% block tree_nav_class %}active{% endblock %}
@@ -8,40 +9,47 @@
 {% endblock %}
 
 {% block content %}
-<div class="table-responsive">
-  <table class="repositories">
-    <thead>
-      <tr>
-        <th style="width: 10rem;">Mode</th>
-        <th>Name</th>
-      </tr>
-    </thead>
+{% call sidebar_toggle::sidebar_toggle("Open file browser") %}
+<div class="two-col">
+  <div class="sidebar">
+      {{ FileTree::new(full_tree.get(), &self.repo, Default::default(), query, Some(repo_path)).render()?|safe }}
+  </div>
 
-    <tbody>
-      {% for (name, name_split, item) in items -%}
-      <tr>
-        <td>
-          <pre>{{ item.get().mode.to_native()|file_perms }}</pre>
-        </td>
-        {% set local_name = name.get()[*name_split..] -%}
-        {% set local_name = local_name.strip_prefix('/').unwrap_or(local_name) -%}
-        {% match item.get().kind -%}
-        {%- when ArchivedTreeItemKind::Tree -%}
-        <td>
-          <pre><a class="nested-tree" href="/{{ repo.display() }}/tree/{{ name.get() }}{{ query }}">{{ local_name }}</a></pre>
-        </td>
-        {%- when ArchivedTreeItemKind::File -%}
-        <td>
-          <pre><a href="/{{ repo.display() }}/tree/{{ name.get() }}{{ query }}">{{ local_name }}</a></pre>
-        </td>
-        {%- when ArchivedTreeItemKind::Submodule with (submodule) -%}
-        <td>
-          <pre>🔗 <a href="{{ submodule.url }}">{{ local_name }}</a> @ {{ submodule.oid|hex }}</pre>
-        </td>
-        {%- endmatch %}
-      </tr>
-      {% endfor -%}
-    </tbody>
-  </table>
+  <div class="table-responsive">
+    <table class="repositories">
+      <thead>
+        <tr>
+          <th style="width: 10rem;">Mode</th>
+          <th>Name</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {% for (name, name_split, item) in items -%}
+        <tr>
+          <td>
+            <pre>{{ item.get().mode.to_native()|file_perms }}</pre>
+          </td>
+          {% set local_name = name.get()[*name_split..] -%}
+          {% set local_name = local_name.strip_prefix('/').unwrap_or(local_name) -%}
+          {% match item.get().kind -%}
+          {%- when ArchivedTreeItemKind::Tree -%}
+          <td>
+            <pre><a class="nested-tree" href="/{{ repo.display() }}/tree/{{ name.get() }}{{ query }}">{{ local_name }}</a></pre>
+          </td>
+          {%- when ArchivedTreeItemKind::File -%}
+          <td>
+            <pre><a href="/{{ repo.display() }}/tree/{{ name.get() }}{{ query }}">{{ local_name }}</a></pre>
+          </td>
+          {%- when ArchivedTreeItemKind::Submodule with (submodule) -%}
+          <td>
+            <pre>🔗 <a href="{{ submodule.url }}">{{ local_name }}</a> @ {{ submodule.oid|hex }}</pre>
+          </td>
+          {%- endmatch %}
+        </tr>
+        {% endfor -%}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endblock %}

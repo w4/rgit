@@ -42,7 +42,7 @@ impl Tree {
             .cf_handle(TREE_FAMILY)
             .context("tree column family missing")?;
 
-        let Some(data) = database.get_pinned_cf(cf, tree_oid.as_slice())? else {
+        let Some(data) = database.get_cf(cf, tree_oid.as_slice())? else {
             return Ok(None);
         };
 

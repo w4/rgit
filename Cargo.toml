@@ -38,7 +38,7 @@ const-hex = "1.14"
 const_format = "0.2"
 flate2 = "1.0"
 futures-util = "0.3"
-gix = { version = "0.71", default-features = false, features = [
+gix = { version = "0.72", default-features = false, features = [
   "tracing",
   "parallel",
   "blob-diff",

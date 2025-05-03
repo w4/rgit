@@ -7,6 +7,7 @@ use serde::Deserialize;
 use std::path::PathBuf;
 use std::{
     fmt::{Display, Formatter},
+    path::Path,
     sync::Arc,
 };
 
@@ -58,15 +59,29 @@ pub struct FileTree<'a> {
     pub inner: &'a ArchivedSortedTree,
     pub base: &'a Repository,
     pub path_stack: String,
+    pub query: &'a UriQuery,
+    pub repo_path: Option<&'a Path>,
 }
 
 impl<'a> FileTree<'a> {
-    pub fn new(inner: &'a ArchivedSortedTree, base: &'a Repository, path_stack: String) -> Self {
+    pub fn new(
+        inner: &'a ArchivedSortedTree,
+        base: &'a Repository,
+        path_stack: String,
+        query: &'a UriQuery,
+        repo_path: Option<&'a Path>,
+    ) -> Self {
         Self {
             inner,
             base,
             path_stack,
+            query,
+            repo_path,
         }
+    }
+
+    pub fn get_next_repo_path_if_parent(&self, name: &str) -> Option<&Path> {
+        self.repo_path.and_then(|v| v.strip_prefix(name).ok())
     }
 }
 
@@ -86,6 +101,7 @@ pub struct TreeView {
 pub struct FileView {
     pub repo: Repository,
     pub repo_path: PathBuf,
+    pub query: UriQuery,
     pub file: FileWithContent,
     pub branch: Option<Arc<str>>,
     pub full_tree: YokedSortedTree,
@@ -188,9 +204,10 @@ pub async fn handle(
                 ResponseEither::Left(ResponseEither::Right(into_response(FileView {
                     repo,
                     file,
-                    branch: query.branch,
+                    branch: query.branch.clone(),
                     repo_path: child_path.unwrap_or_default(),
                     full_tree,
+                    query,
                 })))
             }
         }

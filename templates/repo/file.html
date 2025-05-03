@@ -23,7 +23,7 @@
 
 <div class="two-col">
     <div class="sidebar">
-        {{ FileTree::new(full_tree.get(), &self.repo, Default::default()).render()?|safe }}
+        {{ FileTree::new(full_tree.get(), &self.repo, Default::default(), query, Some(repo_path)).render()?|safe }}
     </div>
 
     <div>

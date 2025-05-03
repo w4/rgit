@@ -1,23 +1,24 @@
 <div class="dropdown-link">
-    {% for (name, item) in inner.0.iter() -%}
+	{% for (name, item) in inner.0.iter() -%}
+	{% let next_repo_path = get_next_repo_path_if_parent(name.0) -%}
 	{% match item -%}
     {% when ArchivedSortedTreeItem::File -%}
     <div class="dropdown-label">
-        <a class="link" href="/{{ base.display() }}/tree{{ path_stack }}/{{ name.0 }}">📄 {{ name.0 }}</a>
+        <a class="link{% if next_repo_path.is_some() %} selected{% endif %}" href="/{{ base.display() }}/tree{{ path_stack }}/{{ name.0 }}{{ query }}">📄 {{ name.0 }}</a>
     </div>
 
     {% when ArchivedSortedTreeItem::Directory with (inner) -%}
     <div class="dropdown-label">
         <label>
-            <input type="checkbox">
+            <input type="checkbox"{% if next_repo_path.is_some() %} checked{% endif %}>
             <div class="dropdown-toggle"><span>›</span></div>
             <span class="sr-only">Open directory</span>
         </label>
-        <a class="link" href="/{{ base.display() }}/tree{{ path_stack }}/{{ name.0 }}">📁 {{ name.0 }}</a>
+        <a class="link" href="/{{ base.display() }}/tree{{ path_stack }}/{{ name.0 }}{{ query }}">📁 {{ name.0 }}</a>
     </div>
 
     <div class="dropdown-content">
-        {{ FileTree::new(inner, self.base, format!("{}/{}", self.path_stack, name.0)).render()?|safe }}
+        {{ FileTree::new(inner, self.base, format!("{}/{}", self.path_stack, name.0), query, *next_repo_path).render()?|safe }}
 	</div>
 	{% endmatch -%}
 	{% endfor -%}

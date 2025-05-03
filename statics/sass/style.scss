@@ -197,6 +197,14 @@ main {
     width: 100%;
     text-decoration: none;
     color: inherit;
+
+    &.selected {
+      background: rgba(0, 0, 255, .1);
+
+      @media (prefers-color-scheme: dark) {
+        background: rgba(0, 255, 0, .2);
+      }
+    }
   }
 
   .dropdown-content {
@@ -204,6 +212,10 @@ main {
     padding-left: .4rem;
     margin-left: .4rem;
     display: none;
+
+    @media (prefers-color-scheme: dark) {
+      border-left: .15rem solid rgba(0, 255, 0, .2);
+    }
   }
 
   input[type="checkbox"] {

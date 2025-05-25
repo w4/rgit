@@ -82,7 +82,7 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
 tree-sitter-grammar-repository = { path = "./tree-sitter-grammar-repository" }
 tree-sitter-highlight = "0.24"
 unix_mode = "0.1"
-uuid = { version = "1.11", features = ["v4"] }
+uuid = { version = "1.16", features = ["v4"] }
 v_htmlescape = { version = "0.15", features = ["bytes-buf"] }
 xxhash-rust = { version = "0.8.15", features = ["const_xxh3", "xxh3"] }
 yoke = { version = "0.7.5", features = ["derive"] }

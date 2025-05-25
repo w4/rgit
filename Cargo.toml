@@ -50,7 +50,7 @@ hashbrown = { version = "0.14", default-features = false, features = [
 ] }
 httparse = "1.10"
 humantime = "2.2"
-itertools = "0.12.1"
+itertools = "0.14.0"
 md5 = "0.7"
 memchr = "2.7"
 moka = { version = "0.12.10", features = ["future"] }

@@ -1,8 +1,8 @@
 use std::fmt::{Formatter, Write};
 
 use serde::{
-    de::{value::MapAccessDeserializer, Error, MapAccess, Visitor},
     Deserialize, Deserializer,
+    de::{Error, MapAccess, Visitor, value::MapAccessDeserializer},
 };
 
 #[derive(Deserialize)]

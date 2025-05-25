@@ -12,7 +12,7 @@ use rkyv::{
     rend::{i32_le, i64_le},
     tuple::ArchivedTuple2,
 };
-use time::{format_description::well_known::Rfc3339, OffsetDateTime, UtcOffset};
+use time::{OffsetDateTime, UtcOffset, format_description::well_known::Rfc3339};
 
 // pub fn format_time(s: impl Borrow<time::OffsetDateTime>) -> Result<String, askama::Error> {
 pub fn format_time(s: impl Into<Timestamp>) -> Result<String, askama::Error> {

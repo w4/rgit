@@ -2,7 +2,7 @@
 name = "tree-sitter-grammar-repository"
 description = "tree-sitter grammars built from Helix with support for dynamic linking"
 version = "0.0.1"
-edition = "2021"
+edition = "2024"
 authors = ["Jordan Doyle <jordan@doyle.la>"]
 license = "WTFPL"
 

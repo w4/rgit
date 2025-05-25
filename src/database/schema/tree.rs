@@ -1,15 +1,15 @@
 use std::collections::BTreeMap;
 
 use anyhow::Context;
-use gix::{bstr::BStr, ObjectId};
+use gix::{ObjectId, bstr::BStr};
 use itertools::{Either, Itertools};
 use rkyv::{Archive, Serialize};
-use rocksdb::{WriteBatch, DB};
+use rocksdb::{DB, WriteBatch};
 use yoke::{Yoke, Yokeable};
 
 use super::{
-    prefixes::{TREE_FAMILY, TREE_ITEM_FAMILY},
     Yoked,
+    prefixes::{TREE_FAMILY, TREE_ITEM_FAMILY},
 };
 
 #[derive(Serialize, Archive, Debug, PartialEq, Eq, Hash)]

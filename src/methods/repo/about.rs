@@ -1,17 +1,17 @@
 use std::sync::Arc;
 
 use askama::Template;
-use axum::{extract::Query, response::IntoResponse, Extension};
+use axum::{Extension, extract::Query, response::IntoResponse};
 use serde::Deserialize;
 
 use crate::{
+    Git,
     git::ReadmeFormat,
     into_response,
     methods::{
         filters,
         repo::{Repository, RepositoryPath, Result},
     },
-    Git,
 };
 
 #[derive(Deserialize)]

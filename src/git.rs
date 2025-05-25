@@ -1,17 +1,17 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use axum::response::IntoResponse;
-use bytes::{buf::Writer, BufMut, Bytes, BytesMut};
+use bytes::{BufMut, Bytes, BytesMut, buf::Writer};
 use comrak::{ComrakPlugins, Options};
 use flate2::write::GzEncoder;
 use gix::{
+    ObjectId, ThreadSafeRepository,
     actor::SignatureRef,
     bstr::{BStr, BString, ByteSlice, ByteVec},
-    diff::blob::{platform::prepare_diff::Operation, Sink},
+    diff::blob::{Sink, platform::prepare_diff::Operation},
     object::Kind,
-    objs::{tree::EntryRef, CommitRef, TagRef},
+    objs::{CommitRef, TagRef, tree::EntryRef},
     prelude::TreeEntryRefExt,
     traverse::tree::visit::Action,
-    ObjectId, ThreadSafeRepository,
 };
 use itertools::Either;
 use moka::future::Cache;
@@ -34,7 +34,7 @@ use yoke::{Yoke, Yokeable};
 
 use crate::{
     methods::filters::DisplayHexBuffer,
-    syntax_highlight::{format_file, format_file_inner, ComrakHighlightAdapter, FileIdentifier},
+    syntax_highlight::{ComrakHighlightAdapter, FileIdentifier, format_file, format_file_inner},
     unified_diff_builder::{Callback, UnifiedDiffBuilder},
 };
 

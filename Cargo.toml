@@ -2,7 +2,7 @@
 name = "rgit"
 description = "A gitweb/cgit-like interface"
 version = "0.1.5"
-edition = "2021"
+edition = "2024"
 authors = ["Jordan Doyle <jordan@doyle.la>"]
 license = "WTFPL"
 

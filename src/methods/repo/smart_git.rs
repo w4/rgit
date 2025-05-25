@@ -1,14 +1,14 @@
 use std::{io, io::ErrorKind, path::Path, process::Stdio, str::FromStr};
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use axum::{
+    Extension,
     body::Body,
     http::{
-        header::{HeaderMap, HeaderName, HeaderValue},
         Method, Uri,
+        header::{HeaderMap, HeaderName, HeaderValue},
     },
     response::{IntoResponse, Response},
-    Extension,
 };
 use bytes::{Buf, Bytes, BytesMut};
 use futures_util::TryStreamExt;
@@ -20,11 +20,11 @@ use tokio::{
 };
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::io::StreamReader;
-use tracing::{debug, error, info_span, warn, Instrument};
+use tracing::{Instrument, debug, error, info_span, warn};
 
 use crate::{
-    methods::repo::{Repository, RepositoryPath, Result},
     StatusCode,
+    methods::repo::{Repository, RepositoryPath, Result},
 };
 
 #[allow(clippy::unused_async)]

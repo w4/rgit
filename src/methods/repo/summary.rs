@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use anyhow::Context;
 use askama::Template;
-use axum::{response::IntoResponse, Extension};
+use axum::{Extension, response::IntoResponse};
 use axum_extra::extract::Host;
 use rkyv::string::ArchivedString;
 
@@ -11,7 +11,7 @@ use crate::{
     into_response,
     methods::{
         filters,
-        repo::{Refs, Repository, Result, DEFAULT_BRANCHES},
+        repo::{DEFAULT_BRANCHES, Refs, Repository, Result},
     },
 };
 

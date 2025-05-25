@@ -6,10 +6,10 @@ use rkyv::{Archive, Serialize};
 use yoke::{Yoke, Yokeable};
 
 use crate::database::schema::{
+    Yoked,
     commit::{ArchivedAuthor, Author},
     prefixes::TAG_FAMILY,
     repository::RepositoryId,
-    Yoked,
 };
 
 #[derive(Serialize, Archive, Debug, Yokeable)]

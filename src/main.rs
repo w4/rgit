@@ -14,30 +14,30 @@ use std::{
 use anyhow::Context;
 use askama::Template;
 use axum::{
+    Extension, Router,
     body::Body,
     http,
     http::{HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::get,
-    Extension, Router,
 };
 use clap::Parser;
 use const_format::formatcp;
 use database::schema::{
-    prefixes::{TREE_FAMILY, TREE_ITEM_FAMILY},
     SCHEMA_VERSION,
+    prefixes::{TREE_FAMILY, TREE_ITEM_FAMILY},
 };
 use rocksdb::{Options, SliceTransform};
 use tokio::{
     net::TcpListener,
-    signal::unix::{signal, SignalKind},
+    signal::unix::{SignalKind, signal},
     sync::mpsc,
 };
 use tower_http::{cors::CorsLayer, timeout::TimeoutLayer};
 use tower_layer::layer_fn;
-use tracing::{error, info, instrument, warn};
+use tracing::{error, info, instrument, level_filters::LevelFilter, warn};
 use tracing_subscriber::{
-    fmt::format::FmtSpan, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter,
+    EnvFilter, fmt::format::FmtSpan, layer::SubscriberExt, util::SubscriberInitExt,
 };
 use xxhash_rust::const_xxh3;
 
@@ -127,12 +127,10 @@ impl FromStr for RefreshInterval {
 async fn main() -> Result<(), anyhow::Error> {
     let args: Args = Args::parse();
 
-    if std::env::var_os("RUST_LOG").is_none() {
-        std::env::set_var("RUST_LOG", "info");
-    }
-
     let logger_layer = tracing_subscriber::fmt::layer().with_span_events(FmtSpan::CLOSE);
-    let env_filter = EnvFilter::from_default_env();
+    let env_filter = EnvFilter::builder()
+        .with_default_directive(LevelFilter::INFO.into())
+        .from_env()?;
 
     tracing_subscriber::registry()
         .with(env_filter)
@@ -312,13 +310,15 @@ async fn run_indexer(
 ) -> Result<(), tokio::task::JoinError> {
     let (indexer_wakeup_send, mut indexer_wakeup_recv) = mpsc::channel(10);
 
-    std::thread::spawn(move || loop {
-        info!("Running periodic index");
-        crate::database::indexer::run(&scan_path, repository_list.as_deref(), &db);
-        info!("Finished periodic index");
+    std::thread::spawn(move || {
+        loop {
+            info!("Running periodic index");
+            crate::database::indexer::run(&scan_path, repository_list.as_deref(), &db);
+            info!("Finished periodic index");
 
-        if indexer_wakeup_recv.blocking_recv().is_none() {
-            break;
+            if indexer_wakeup_recv.blocking_recv().is_none() {
+                break;
+            }
         }
     });
 
@@ -328,7 +328,7 @@ async fn run_indexer(
             match refresh_interval {
                 RefreshInterval::Never => futures_util::future::pending().await,
                 RefreshInterval::Duration(v) => tokio::time::sleep(v).await,
-            };
+            }
         };
 
         async move {

@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use anyhow::{anyhow, Context};
-use axum::{body::Body, extract::Query, http::Response, Extension};
+use anyhow::{Context, anyhow};
+use axum::{Extension, body::Body, extract::Query, http::Response};
 use serde::Deserialize;
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::{error, info_span, Instrument};
+use tracing::{Instrument, error, info_span};
 
 use super::{RepositoryPath, Result};
 use crate::git::Git;

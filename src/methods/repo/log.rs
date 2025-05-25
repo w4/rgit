@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use askama::Template;
-use axum::{extract::Query, response::IntoResponse, Extension};
+use axum::{Extension, extract::Query, response::IntoResponse};
 use serde::Deserialize;
 
 use crate::{
@@ -10,7 +10,7 @@ use crate::{
     into_response,
     methods::{
         filters,
-        repo::{Repository, Result, DEFAULT_BRANCHES},
+        repo::{DEFAULT_BRANCHES, Repository, Result},
     },
 };
 

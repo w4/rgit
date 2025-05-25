@@ -7,10 +7,10 @@ use rocksdb::IteratorMode;
 use yoke::{Yoke, Yokeable};
 
 use crate::database::schema::{
+    Yoked,
     commit::CommitTree,
     prefixes::{COMMIT_FAMILY, REFERENCE_FAMILY, REPOSITORY_FAMILY, TAG_FAMILY},
     tag::TagTree,
-    Yoked,
 };
 
 #[derive(Serialize, Archive, Debug, PartialEq, Eq, Hash, Yokeable)]

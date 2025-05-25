@@ -15,7 +15,7 @@ use axum::{
 use futures_util::future::{FutureExt, Join, Map, Ready};
 use tokio::task::futures::TaskLocalFuture;
 use tower_service::Service;
-use tracing::{error, info, instrument::Instrumented, Instrument, Span};
+use tracing::{Instrument, Span, error, info, instrument::Instrumented};
 use uuid::Uuid;
 
 use super::UnwrapInfallible;

@@ -9,11 +9,11 @@ use std::{
 
 use anyhow::Context;
 use gix::{
+    ObjectId, Reference, Url,
     bstr::{BStr, ByteSlice},
     objs::tree::EntryKind,
     refs::Category,
     url::Scheme,
-    ObjectId, Reference, Url,
 };
 use itertools::{Either, Itertools};
 use rocksdb::WriteBatch;

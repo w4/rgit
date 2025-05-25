@@ -1,6 +1,6 @@
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use askama::Template;
-use axum::{extract::Query, response::IntoResponse, Extension};
+use axum::{Extension, extract::Query, response::IntoResponse};
 use gix::ObjectId;
 use itertools::Itertools;
 use serde::Deserialize;
@@ -16,13 +16,13 @@ use crate::database::schema::tree::{
     YokedSortedTree, YokedTreeItem, YokedTreeItemKeyUtf8,
 };
 use crate::{
+    Git, ResponseEither,
     git::FileWithContent,
     into_response,
     methods::{
         filters,
         repo::{ChildPath, Repository, RepositoryPath, Result},
     },
-    Git, ResponseEither,
 };
 
 use super::log::get_branch_commits;

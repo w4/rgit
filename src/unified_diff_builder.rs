@@ -4,8 +4,8 @@
 use std::{fmt::Write, ops::Range};
 
 use gix::diff::blob::{
-    intern::{InternedInput, Interner, Token},
     Sink,
+    intern::{InternedInput, Interner, Token},
 };
 
 pub(crate) trait Callback {

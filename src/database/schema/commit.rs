@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Context;
-use gix::{actor::SignatureRef, objs::CommitRef, ObjectId};
+use gix::{ObjectId, actor::SignatureRef, objs::CommitRef};
 use rkyv::{Archive, Serialize};
 use rocksdb::{IteratorMode, ReadOptions, WriteBatch};
 use time::{OffsetDateTime, UtcOffset};
@@ -9,9 +9,9 @@ use tracing::debug;
 use yoke::{Yoke, Yokeable};
 
 use crate::database::schema::{
+    Yoked,
     prefixes::{COMMIT_COUNT_FAMILY, COMMIT_FAMILY},
     repository::RepositoryId,
-    Yoked,
 };
 
 #[derive(Serialize, Archive, Debug, Yokeable)]

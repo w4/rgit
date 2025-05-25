@@ -9,7 +9,7 @@ use crate::{
 };
 use anyhow::Context;
 use askama::Template;
-use axum::{response::IntoResponse, Extension};
+use axum::{Extension, response::IntoResponse};
 use rkyv::string::ArchivedString;
 use yoke::Yoke;
 

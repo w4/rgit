@@ -1,6 +1,6 @@
 {
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/staging-next";
+    nixpkgs.url = "github:NixOS/nixpkgs";
 
     crane.url = "github:ipetkov/crane";
     utils.url = "github:numtide/flake-utils";
@@ -60,6 +60,7 @@
           nativeBuildInputs = with pkgs; [ cmake clang makeBinaryWrapper ];
           LIBCLANG_PATH = "${pkgs.clang.cc.lib}/lib";
           ROCKSDB_LIB_DIR = "${pkgs.rocksdb}/lib";
+          SNAPPY_LIB_DIR = "${pkgs.snappy}/lib";
         };
         cargoArtifacts = craneLib.buildDepsOnly (commonArgs // { src = cargoOnlySrc; });
         buildArgs = commonArgs // {
@@ -97,9 +98,12 @@
 
         devShells.default = craneLib.devShell {
           checks = self.checks.${system};
-          packages = with pkgs; [ rust-analyzer ];
+          packages = with pkgs; [ rust-analyzer clang ];
           RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
+          LIBCLANG_PATH = "${pkgs.clang.cc.lib}/lib";
           TREE_SITTER_GRAMMAR_LIB_DIR = rgit-grammar;
+          ROCKSDB_LIB_DIR = "${pkgs.rocksdb}/lib";
+          SNAPPY_LIB_DIR = "${pkgs.snappy}/lib";
         };
 
         nixosModules.default = { config, lib, pkgs, ... }:

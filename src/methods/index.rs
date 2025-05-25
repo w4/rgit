@@ -3,8 +3,8 @@ use std::{cell::RefCell, sync::Arc};
 use anyhow::Context;
 use askama::Template;
 use axum::{
-    response::{IntoResponse, Response},
     Extension,
+    response::{IntoResponse, Response},
 };
 use itertools::{Either, Itertools};
 

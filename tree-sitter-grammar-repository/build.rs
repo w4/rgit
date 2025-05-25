@@ -8,7 +8,7 @@ use std::{
     sync::LazyLock,
 };
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use quote::{format_ident, quote};
 use serde::Deserialize;
@@ -357,7 +357,7 @@ fn build_language_module(
 
     Ok(Some(quote! {
         pub mod #name {
-            extern "C" {
+            unsafe extern "C" {
                 fn #ffi() -> *const ();
             }
 

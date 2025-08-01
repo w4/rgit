@@ -33,7 +33,7 @@ clap = { version = "4.5.37", default-features = false, features = [
   "help",
   "usage",
 ] }
-comrak = { version = "0.38.0", default-features = false }
+comrak = { version = "0.40.0", default-features = false }
 const-hex = "1.14"
 const_format = "0.2"
 flate2 = "1.0"

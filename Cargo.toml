@@ -66,7 +66,7 @@ simdutf8 = "0.1.5"
 tar = { version = "0.4", default-features = false }
 time = { version = "0.3", features = ["serde", "formatting"] }
 timeago = { version = "0.4.2", default-features = false }
-tokio = { version = "1.44", features = ["full", "tracing"] }
+tokio = { version = "1.47", features = ["full", "tracing"] }
 tokio-stream = "0.1"
 tokio-util = { version = "0.7.15", features = ["io"] }
 tower-http = { version = "0.6", features = ["cors", "timeout"] }

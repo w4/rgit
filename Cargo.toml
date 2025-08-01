@@ -55,7 +55,7 @@ md5 = "0.7"
 memchr = "2.7"
 moka = { version = "0.12.10", features = ["future"] }
 path-clean = "1.0.1"
-rand = "0.8.5"
+rand = "0.9.2"
 rkyv = { version = "0.8", features = [
   "bytecheck",
   "alloc",

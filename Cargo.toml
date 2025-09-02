@@ -34,7 +34,7 @@ clap = { version = "4.5.37", default-features = false, features = [
   "usage",
 ] }
 comrak = { version = "0.38.0", default-features = false }
-const-hex = "1.14"
+const-hex = "1.15"
 const_format = "0.2"
 flate2 = "1.0"
 futures-util = "0.3"

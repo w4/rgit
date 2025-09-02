@@ -434,9 +434,9 @@ dependencies = [
 
 [[package]]
 name = "const-hex"
-version = "1.14.0"
+version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b0485bab839b018a8f1723fc5391819fea5f8f0f32288ef8a735fd096b6160c"
+checksum = "dccd746bf9b1038c0507b7cec21eb2b11222db96a2902c96e8c185d6d20fb9c4"
 dependencies = [
  "cfg-if",
  "cpufeatures",

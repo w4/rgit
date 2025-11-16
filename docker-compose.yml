@@ -2,14 +2,12 @@ version: '3'
 services:
   rgit:
     image: ghcr.io/w4/rgit:main
-    command:
-      - "[::]:8000"
-      - /git
-      - -d /tmp/rgit-cache.db
     volumes:
       - /volume/git:/git
     ports:
       - 8000:8000
     environment:
       - REFRESH_INTERVAL=5m
+      - DB_STORE=/tmp/rgit.db
+      - SCAN_PATH=/git
     restart: unless-stopped

@@ -4,7 +4,7 @@ use std::{
     borrow::Cow,
     fmt::{Display, Formatter},
     future::IntoFuture,
-    net::SocketAddr,
+    net::{IpAddr, Ipv6Addr, SocketAddr},
     path::PathBuf,
     str::FromStr,
     sync::{Arc, OnceLock},
@@ -72,24 +72,25 @@ static DARK_HIGHLIGHT_CSS_HASH: OnceLock<Box<str>> = OnceLock::new();
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
 pub struct Args {
-    /// Path to a directory in which the `RocksDB` database should be stored, will be created if it doesn't already exist
-    ///
-    /// The `RocksDB` database is very quick to generate, so this can be pointed to temporary storage
-    #[clap(short, long, value_parser)]
-    db_store: PathBuf,
-    /// The socket address to bind to (eg. 0.0.0.0:3333)
-    bind_address: SocketAddr,
     /// The path in which your bare Git repositories reside (will be scanned recursively)
+    #[clap(short, long, env="SCAN_PATH", value_parser)]
     scan_path: PathBuf,
+    /// The socket address to bind to (eg. 0.0.0.0:3333)
+    #[clap(short, long, env="BIND_ADDRESS", default_value_t = SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)), 8080), value_parser)]
+    bind_address: SocketAddr,
+    /// Path to a directory in which the `RocksDB` database should be stored, will be created if it doesn't already exist
+    /// The `RocksDB` database is very quick to generate, so this can be pointed to temporary storage
+    #[clap(short, long, env="DB_STORE", value_parser)]
+    db_store: PathBuf,
     /// Optional path (relative to cwd) to a plain text file containing a list of repositories relative to the `scan_path`
     /// that are whitelisted to be exposed by rgit.
-    #[clap(long)]
+    #[clap(long, env="REPOSITORY_LIST")]
     repository_list: Option<PathBuf>,
     /// Configures the metadata refresh interval (eg. "never" or "60s")
-    #[clap(long, default_value_t = RefreshInterval::Duration(Duration::from_secs(300)))]
+    #[clap(long, env="REFRESH_INTERVAL", default_value_t = RefreshInterval::Duration(Duration::from_secs(300)))]
     refresh_interval: RefreshInterval,
     /// Configures the request timeout.
-    #[clap(long, default_value_t = Duration::from_secs(10).into())]
+    #[clap(long, env="REQUEST_TIMEOUT", default_value_t = Duration::from_secs(10).into())]
     request_timeout: humantime::Duration,
 }
 
